@@ -224,3 +224,143 @@ button.primary:active {
   margin-top: 1.75rem;
   font-family: monospace;
 }
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EduBank | Banco Escolar Cuántico</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Fuentes Google: Space Grotesk, Inter y JetBrains Mono para toques de código -->
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body class="landingpage">
+
+  <!-- Elementos de fondo cibernético avanzado -->
+  <div class="cyber-grid"></div>
+  <div class="cyber-glow-1"></div>
+  <div class="cyber-glow-2"></div>
+
+  <!-- Header de Navegación Futurista -->
+  <header class="cyber-header">
+    <div class="brand">
+      <div class="logo-box"><span>EB</span></div>
+      <div>
+        <b>EDUBANK</b>
+        <small class="mono">SYSTEM_CORE // v3.0</small>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="status-badge"><span class="pulse-dot"></span> RED ACTIVA</span>
+      <button class="btn-cyber-outline" onclick="location.href='login.html'">Iniciar Sesión ⚡</button>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main class="hero">
+    <section class="hero-content">
+      <div class="tag">⚡ ECONOMÍA ESCOLAR NEURAL // 2026</div>
+      <h1>Domina tus finanzas.<br><span>Evoluciona tu futuro.</span></h1>
+      <p>Una plataforma inmersiva conectada a tu institución educativa para aprender el valor del ahorro, la gestión de créditos, recompensas y decisiones financieras con EduCoins.</p>
+      
+      <div class="buttons">
+        <button class="primary" onclick="location.href='login.html'">Acceder al Nodo <b>→</b></button>
+        <button class="secondary" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">Explorar Protocolos</button>
+      </div>
+
+      <div class="hero-metrics">
+        <div>
+          <strong class="mono">100%</strong>
+          <span>Seguro & Rápido</span>
+        </div>
+        <div class="divider"></div>
+        <div>
+          <strong class="mono">Supabase</strong>
+          <span>Base de Datos DB</span>
+        </div>
+        <div class="divider"></div>
+        <div>
+          <strong class="mono">Gamificado</strong>
+          <span>Sistema XP & Rango</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interfaz simulada de Panel Holo (Mockup móvil futurista) -->
+    <div class="phone-container">
+      <div class="phone-holo-glow"></div>
+      <div class="phone">
+        <div class="screen">
+          <div class="minihead">
+            <b>ESTUDIANTE_NODE</b>
+            <span class="mono cyan">LVL 05</span>
+          </div>
+          <div class="balance">
+            <small>SALDO DISPONIBLE</small>
+            <strong>1,450</strong>
+            <label>EduCoins ⚡</label>
+          </div>
+          <div class="quick">
+            <div><span>＋</span><small>Premio</small></div>
+            <div><span>↗</span><small>Ahorro</small></div>
+            <div><span>🎁</span><small>Tienda</small></div>
+          </div>
+          <div class="recent">
+            <b>Últimos Registros</b>
+            <p><i>+</i> Participación IA <strong>+120</strong></p>
+            <p><i>+</i> Rango Asistencia <strong>+50</strong></p>
+            <p><i class="red">−</i> Licencia Kit <strong>-200</strong></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Módulos / Características -->
+  <section id="features" class="features-section">
+    <div class="section-title">
+      <div class="tag">ARQUITECTURA DEL SISTEMA</div>
+      <h2>Módulos de alto rendimiento para <span>estudiantes del mañana</span></h2>
+    </div>
+    
+    <div class="grid">
+      <article class="cyber-card">
+        <div class="card-icon">💰</div>
+        <h3>Billetera Virtual</h3>
+        <p>Controla tus ingresos, saldos y metas financieras en tiempo real con trazabilidad total.</p>
+      </article>
+      <article class="cyber-card">
+        <div class="card-icon">🏆</div>
+        <h3>Recompensas Académicas</h3>
+        <p>Obtén EduCoins y puntos de experiencia (XP) por méritos, disciplina y constancia escolar.</p>
+      </article>
+      <article class="cyber-card">
+        <div class="card-icon">💳</div>
+        <h3>Simulador de Créditos</h3>
+        <p>Aprende a gestionar préstamos escolares con cuotas claras y responsabilidad financiera.</p>
+      </article>
+      <article class="cyber-card">
+        <div class="card-icon">🎁</div>
+        <h3>Tienda Institucional</h3>
+        <p>Canjea tus monedas virtuales por privilegios exclusivos y recursos educativos oficiales.</p>
+      </article>
+      <article class="cyber-card">
+        <div class="card-icon">🧠</div>
+        <h3>Retos Cibernéticos</h3>
+        <p>Resuelve desafíos lógicos y financieros para desbloquear logros y bonificaciones.</p>
+      </article>
+      <article class="cyber-card">
+        <div class="card-icon">📊</div>
+        <h3>Analítica de Progreso</h3>
+        <p>Visualiza tu evolución y métricas de desempeño escolar mediante tableros avanzados.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="cyber-footer">
+    <p><b>EDUBANK SYSTEM CORE</b> · Educación financiera gamificada de nueva generación.</p>
+  </footer>
+
+</body>
+</html>
