@@ -1,141 +1,193 @@
-/* Estilos Globales y Reset */
+/* Importar fuentes */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap');
+
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 
 body.loginpage {
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-  color: #0f172a;
+  background-color: #030712;
+  color: #f3f4f6;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
 }
 
-/* Caja de Login Premium */
+/* Fondo con patrón de retícula digital (Cyber Grid) */
+.cyber-grid {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: 
+    linear-gradient(to right, rgba(59, 130, 246, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(59, 130, 246, 0.05) 1px, transparent 1px);
+  background-size: 30px 30px;
+  z-index: 1;
+}
+
+/* Resplandor futurista de fondo */
+.cyber-glow {
+  position: absolute;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.15) 0%, rgba(14, 165, 233, 0.05) 60%, transparent 100%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Caja de login con efecto Glassmorphism futurista */
 .loginbox {
-  background: #ffffff;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(59, 130, 246, 0.2);
   width: 100%;
-  max-width: 420px;
-  padding: 2.5rem;
+  max-width: 430px;
+  padding: 2.75rem;
   border-radius: 1.25rem;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
-  animation: fadeIn 0.4s ease-out;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 30px rgba(37, 99, 235, 0.15);
+  position: relative;
+  z-index: 2;
+  animation: cyberAppear 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes cyberAppear {
+  from { opacity: 0; transform: scale(0.95) translateY(15px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Marca y Logo */
+/* Marca y Logotipo Cibernético */
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
+  gap: 1rem;
   margin-bottom: 1.75rem;
 }
 
 .logo {
-  width: 45px;
-  height: 45px;
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
   color: #ffffff;
-  font-size: 1.5rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.25rem;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 0.75rem;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .brand b {
   display: block;
+  font-family: 'Space Grotesk', sans-serif;
   font-size: 1.2rem;
-  color: #0f172a;
+  letter-spacing: 0.05em;
+  color: #ffffff;
 }
 
 .brand small {
   display: block;
-  font-size: 0.8rem;
-  color: #64748b;
-  font-weight: 500;
+  font-size: 0.7rem;
+  color: #38bdf8;
+  font-family: monospace;
+  letter-spacing: 0.1em;
 }
 
-/* Etiquetas y Textos */
+/* Etiqueta Cyber Badge */
 .tag {
   display: inline-block;
-  background: #eff6ff;
-  color: #2563eb;
-  font-size: 0.7rem;
+  background: rgba(6, 182, 212, 0.1);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: #22d3ee;
+  font-family: monospace;
+  font-size: 0.68rem;
   font-weight: 700;
-  padding: 0.25rem 0.6rem;
-  border-radius: 2rem;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.75rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 4px;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.85rem;
+  text-transform: uppercase;
 }
 
 .loginbox h1 {
-  font-size: 1.6rem;
-  color: #0f172a;
-  margin-bottom: 0.5rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.75rem;
+  color: #ffffff;
+  margin-bottom: 0.4rem;
   font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .muted {
-  color: #64748b;
-  font-size: 0.92rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
   line-height: 1.5;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
 }
 
-/* Formularios e Inputs */
+/* Campos de entrada futuristas */
 .form-group {
-  margin-bottom: 1.15rem;
+  margin-bottom: 1.25rem;
 }
 
 .loginbox label {
   display: block;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  color: #334155;
+  color: #cbd5e1;
   margin-bottom: 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .loginbox input {
   width: 100%;
-  padding: 0.8rem 1rem;
-  border: 1px solid #cbd5e1;
+  padding: 0.85rem 1rem;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(51, 65, 85, 0.8);
   border-radius: 0.65rem;
   font-size: 0.95rem;
+  color: #ffffff;
   outline: none;
-  transition: all 0.2s ease;
-  background: #f8fafc;
+  transition: all 0.25s ease;
+}
+
+.loginbox input::placeholder {
+  color: #64748b;
 }
 
 .loginbox input:focus {
-  border-color: #2563eb;
-  background: #ffffff;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+  border-color: #38bdf8;
+  background: rgba(30, 41, 59, 0.9);
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
 }
 
-/* Botón principal */
+/* Botón cibernético */
 button.primary {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
   color: #ffffff;
   border: none;
+  font-family: 'Space Grotesk', sans-serif;
   font-weight: 600;
-  padding: 0.85rem 1rem;
+  padding: 0.9rem 1rem;
   border-radius: 0.65rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   font-size: 0.95rem;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  letter-spacing: 0.05em;
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4);
 }
 
 button.primary.full {
@@ -144,20 +196,20 @@ button.primary.full {
 }
 
 button.primary:hover {
-  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
-  box-shadow: 0 6px 15px rgba(37, 99, 235, 0.35);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #1d4ed8 0%, #0891b2 100%);
+  box-shadow: 0 6px 25px rgba(6, 182, 212, 0.6);
+  transform: translateY(-2px);
 }
 
 button.primary:active {
   transform: translateY(0);
 }
 
-/* Caja de Error y Texto de Ayuda */
+/* Caja de error y ayuda */
 .errorbox {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #dc2626;
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
   padding: 0.75rem;
   border-radius: 0.5rem;
   font-size: 0.85rem;
@@ -167,7 +219,8 @@ button.primary:active {
 
 .help {
   text-align: center;
-  font-size: 0.78rem;
-  color: #94a3b8;
-  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 1.75rem;
+  font-family: monospace;
 }
