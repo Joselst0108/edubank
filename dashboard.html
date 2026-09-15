@@ -1,1 +1,75 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EduBank | Panel</title><link rel="stylesheet" href="css/style.css"></head><body class="app"><aside><div class="brand side"><div class="logo">E</div><div><b>EduBank</b><small>Banco Escolar</small></div></div><div class="schoolbadge" id="schoolBadge">CARGANDO...</div><nav id="nav"></nav><button class="logout" onclick="logout()">↪ Cerrar sesión</button></aside><main class="dash"><div class="top"><div><div class="tag" id="roleTag">EDUBANK</div><h1 id="hello">Cargando...</h1><p id="subtitle">Consultando datos reales...</p></div><div class="topright"><div class="avatar" id="avatar">E</div></div></div><div id="content"><div class="panel"><h2>Cargando datos...</h2></div></div></main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="js/supabase.js"></script><script src="js/app.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduBank | Panel del Sistema</title>
+  <!-- Estilos globales de EduBank -->
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Supabase JS Client UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dashboard-body">
+
+  <!-- CONTENEDOR GENERAL DE LA APLICACIÓN -->
+  <div class="app-layout">
+    
+    <!-- BARRA LATERAL (SIDEBAR) -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-icon">E</div>
+        <div>
+          <h1>EduBank</h1>
+          <small id="schoolBadge">CARGANDO...</small>
+        </div>
+      </div>
+
+      <!-- Menú dinámico inyectado por js/app.js -->
+      <nav class="nav" id="nav">
+        <!-- Se llena automáticamente según el rol -->
+      </nav>
+
+      <!-- Botón de Cerrar Sesión -->
+      <div class="sidebar-footer">
+        <button class="logout-btn" onclick="logout()">
+          <span>⎋</span> Cerrar sesión
+        </button>
+      </div>
+    </aside>
+
+    <!-- ÁREA PRINCIPAL -->
+    <main class="main-content">
+      
+      <!-- CABECERA SUPERIOR -->
+      <header class="topbar">
+        <div class="welcome-box">
+          <h2 id="hello">¡Hola, Usuario! 👋</h2>
+          <p id="subtitle">Cargando información del sistema...</p>
+        </div>
+
+        <div class="user-profile-badge">
+          <div class="avatar" id="avatar">U</div>
+          <div>
+            <strong id="roleTag">ROL</strong>
+            <small>EduBank Cloud</small>
+          </div>
+        </div>
+      </header>
+
+      <!-- CONTENEDOR DINÁMICO DE VISTAS -->
+      <div id="content" class="content-body">
+        <!-- Las vistas (Inicio, Colegios, Alumnos, Movimientos, etc.) se renderizan aquí -->
+        <div class="panel">
+          <h2>Cargando panel...</h2>
+          <p class="muted">Por favor, espera un momento mientras conectamos con la base de datos.</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- SCRIPTS DE CONEXIÓN Y LÓGICA -->
+  <script src="js/supabase.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
