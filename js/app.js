@@ -359,7 +359,7 @@ function adminHome() {
 }
 
 /* =========================================================
-   GESTIÓN DE COLEGIOS (SUPERADMIN)
+   GESTIÓN DE COLEGIOS (CON EDICIÓN Y DATOS SUPABASE)
 ========================================================= */
 
 function colegios() {
@@ -367,11 +367,19 @@ function colegios() {
     'Colegios',
     `
       <div class="panel" style="margin-bottom: 20px;">
-        <h2>Registrar Nuevo Colegio</h2>
+        <h2 id="schoolFormTitle">Registrar Nuevo Colegio</h2>
         <div style="display: grid; gap: 10px; margin-top: 15px;">
+          <input type="hidden" id="editSchoolId" value="">
           <input type="text" id="newSchoolName" placeholder="Nombre del colegio" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
           <input type="text" id="newSchoolCode" placeholder="Código modular o abreviatura" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
-          <button class="primary" onclick="createSchoolSubmit()">+ Crear Colegio</button>
+          <select id="newSchoolActivo" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+            <option value="true">Activo</option>
+            <option value="false">Inactivo</option>
+          </select>
+          <div style="display: flex; gap: 10px;">
+            <button class="primary" style="flex: 1;" onclick="saveSchoolSubmit()" id="schoolBtnSubmit">+ Crear Colegio</button>
+            <button id="cancelSchoolEdit" style="display:none; padding: 10px; border-radius: 8px; border: 1px solid #555; background: #333; color: #fff; cursor: pointer;" onclick="resetSchoolForm()">Cancelar</button>
+          </div>
         </div>
       </div>
 
@@ -380,12 +388,17 @@ function colegios() {
           <h2>Colegios registrados (${schoolList.length})</h2>
         </div>
         ${schoolList.map(s => `
-          <div class="listrow">
+          <div class="listrow" style="display: flex; justify-content: space-between; align-items: center;">
             <div>
               <b>${s.name}</b>
-              <small>Código: ${s.code || '—'} · ID: ${s.id}</small>
+              <small>Código: ${s.code || '—'} · Creado: ${s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'} · ID: ${s.id}</small>
             </div>
-            <span class="status">Activo</span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="status" style="background: ${s.activo !== false ? 'rgba(16, 185, 129, 0.1); color: #34d399;' : 'rgba(239, 68, 68, 0.1); color: #ef4444;'}">
+                ${s.activo !== false ? 'Activo' : 'Inactivo'}
+              </span>
+              <button onclick="editSchool('${s.id}')" style="padding: 6px 12px; border-radius: 6px; background: #2563eb; color: #fff; border: none; cursor: pointer; font-size: 12px;">Editar</button>
+            </div>
           </div>
         `).join('') || empty()}
       </div>
@@ -393,35 +406,76 @@ function colegios() {
   );
 }
 
-async function createSchoolSubmit() {
+function editSchool(id) {
+  const s = schoolList.find(item => item.id === id);
+  if (!s) return;
+
+  $('#editSchoolId').value = s.id;
+  $('#newSchoolName').value = s.name || '';
+  $('#newSchoolCode').value = s.code || '';
+  $('#newSchoolActivo').value = String(s.activo !== false);
+
+  $('#schoolFormTitle').textContent = `Editar Colegio: ${s.name}`;
+  $('#schoolBtnSubmit').textContent = '💾 Actualizar Colegio';
+  $('#cancelSchoolEdit').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function resetSchoolForm() {
+  $('#editSchoolId').value = '';
+  $('#newSchoolName').value = '';
+  $('#newSchoolCode').value = '';
+  $('#newSchoolActivo').value = 'true';
+
+  $('#schoolFormTitle').textContent = 'Registrar Nuevo Colegio';
+  $('#schoolBtnSubmit').textContent = '+ Crear Colegio';
+  $('#cancelSchoolEdit').style.display = 'none';
+}
+
+async function saveSchoolSubmit() {
+  const id = $('#editSchoolId').value;
   const name = $('#newSchoolName').value.trim();
   const code = $('#newSchoolCode').value.trim();
+  const activo = $('#newSchoolActivo').value === 'true';
 
   if (!name || !code) {
     return alert('Por favor, completa el nombre y el código del colegio.');
   }
 
-  const { error } = await window.eduBankSupabase
-    .from('schools')
-    .insert({ name, code, activo: true });
-
-  if (error) {
-    return alert('Error al crear colegio: ' + error.message);
+  let error;
+  if (id) {
+    // Actualizar
+    const res = await window.eduBankSupabase
+      .from('schools')
+      .update({ name, code, activo })
+      .eq('id', id);
+    error = res.error;
+  } else {
+    // Insertar
+    const res = await window.eduBankSupabase
+      .from('schools')
+      .insert({ name, code, activo });
+    error = res.error;
   }
 
-  alert('¡Colegio creado exitosamente!');
+  if (error) {
+    return alert('Error al guardar colegio: ' + error.message);
+  }
+
+  alert(id ? '¡Colegio actualizado exitosamente!' : '¡Colegio creado exitosamente!');
+  resetSchoolForm();
   await loadData();
   render('colegios');
 }
 
 /* =========================================================
-   GESTIÓN DE USUARIOS
+   GESTIÓN DE USUARIOS (CON EDICIÓN Y DATOS SUPABASE)
 ========================================================= */
 
 async function usuarios() {
   let query = window.eduBankSupabase
     .from('profiles')
-    .select('id, nombres, apellidos, dni, role, school_id, activo')
+    .select('id, nombres, apellidos, dni, role, school_id, activo, balance, created_at')
     .order('nombres');
 
   if (me.role !== 'superadmin' && me.school_id) {
@@ -431,14 +485,15 @@ async function usuarios() {
   const { data, error } = await query;
   if (error) return layout('Usuarios', `<div class="panel"><h2>Error</h2><p>${error.message}</p></div>`);
 
-  const users = data || [];
+  window.usersListCache = data || [];
 
   return layout(
     'Usuarios',
     `
       <div class="panel" style="margin-bottom: 20px;">
-        <h2>Registrar Nuevo Usuario / Personal</h2>
+        <h2 id="userFormTitle">Registrar Nuevo Usuario / Personal</h2>
         <div style="display: grid; gap: 10px; margin-top: 15px;">
+          <input type="hidden" id="editUserId" value="">
           <input type="text" id="uNombres" placeholder="Nombres" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
           <input type="text" id="uApellidos" placeholder="Apellidos" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
           <input type="text" id="uDni" placeholder="DNI" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
@@ -452,21 +507,33 @@ async function usuarios() {
             <option value="">Selecciona un colegio...</option>
             ${schoolList.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
           </select>
-          <button class="primary" onclick="createUserSubmit()">+ Registrar Usuario en el Sistema</button>
+          <select id="uActivo" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+            <option value="true">Activo</option>
+            <option value="false">Inactivo</option>
+          </select>
+          <div style="display: flex; gap: 10px;">
+            <button class="primary" style="flex: 1;" onclick="saveUserSubmit()" id="userBtnSubmit">+ Registrar Usuario en el Sistema</button>
+            <button id="cancelUserEdit" style="display:none; padding: 10px; border-radius: 8px; border: 1px solid #555; background: #333; color: #fff; cursor: pointer;" onclick="resetUserForm()">Cancelar</button>
+          </div>
         </div>
       </div>
 
       <div class="panel">
         <div class="paneltitle">
-          <h2>Usuarios del sistema (${users.length})</h2>
+          <h2>Usuarios del sistema (${window.usersListCache.length})</h2>
         </div>
-        ${users.map(p => `
-          <div class="listrow">
+        ${window.usersListCache.map(p => `
+          <div class="listrow" style="display: flex; justify-content: space-between; align-items: center;">
             <div>
               <b>${p.nombres || ''} ${p.apellidos || ''}</b>
-              <small>${roleNames[p.role] || p.role} · DNI: ${p.dni || '—'} · Colegio: ${schoolName(p.school_id)}</small>
+              <small>${roleNames[p.role] || p.role} · DNI: ${p.dni || '—'} · Colegio: ${schoolName(p.school_id)} · Saldo: ${money(p.balance || 0)} 🪙</small>
             </div>
-            <span class="status">${p.activo === false ? 'Inactivo' : 'Activo'}</span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="status" style="background: ${p.activo !== false ? 'rgba(16, 185, 129, 0.1); color: #34d399;' : 'rgba(239, 68, 68, 0.1); color: #ef4444;'}">
+                ${p.activo !== false ? 'Activo' : 'Inactivo'}
+              </span>
+              <button onclick="editUser('${p.id}')" style="padding: 6px 12px; border-radius: 6px; background: #2563eb; color: #fff; border: none; cursor: pointer; font-size: 12px;">Editar</button>
+            </div>
           </div>
         `).join('') || empty()}
       </div>
@@ -474,12 +541,46 @@ async function usuarios() {
   );
 }
 
-async function createUserSubmit() {
+function editUser(id) {
+  const p = (window.usersListCache || []).find(item => item.id === id);
+  if (!p) return;
+
+  $('#editUserId').value = p.id;
+  $('#uNombres').value = p.nombres || '';
+  $('#uApellidos').value = p.apellidos || '';
+  $('#uDni').value = p.dni || '';
+  $('#uRole').value = p.role || 'docente';
+  $('#uSchool').value = p.school_id || '';
+  $('#uActivo').value = String(p.activo !== false);
+
+  $('#userFormTitle').textContent = `Editar Usuario: ${p.nombres || ''} ${p.apellidos || ''}`;
+  $('#userBtnSubmit').textContent = '💾 Actualizar Usuario';
+  $('#cancelUserEdit').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function resetUserForm() {
+  $('#editUserId').value = '';
+  $('#uNombres').value = '';
+  $('#uApellidos').value = '';
+  $('#uDni').value = '';
+  $('#uRole').value = 'docente';
+  $('#uSchool').value = '';
+  $('#uActivo').value = 'true';
+
+  $('#userFormTitle').textContent = 'Registrar Nuevo Usuario / Personal';
+  $('#userBtnSubmit').textContent = '+ Registrar Usuario en el Sistema';
+  $('#cancelUserEdit').style.display = 'none';
+}
+
+async function saveUserSubmit() {
+  const id = $('#editUserId').value;
   const nombres = $('#uNombres').value.trim();
   const apellidos = $('#uApellidos').value.trim();
   const dni = $('#uDni').value.trim();
   const role = $('#uRole').value;
   const school_id = $('#uSchool').value;
+  const activo = $('#uActivo').value === 'true';
 
   if (!nombres || !apellidos || !dni) {
     return alert('Por favor, completa los datos principales del usuario.');
@@ -490,22 +591,37 @@ async function createUserSubmit() {
     apellidos,
     dni,
     role,
-    activo: true
+    activo
   };
 
   if (school_id && school_id.trim() !== '') {
     userData.school_id = school_id;
+  } else {
+    userData.school_id = null;
   }
 
-  const { error } = await window.eduBankSupabase
-    .from('profiles')
-    .insert(userData);
+  let error;
+  if (id) {
+    // Actualizar usuario existente
+    const res = await window.eduBankSupabase
+      .from('profiles')
+      .update(userData)
+      .eq('id', id);
+    error = res.error;
+  } else {
+    // Insertar nuevo usuario
+    const res = await window.eduBankSupabase
+      .from('profiles')
+      .insert(userData);
+    error = res.error;
+  }
 
   if (error) {
-    return alert('Error al registrar usuario: ' + error.message);
+    return alert('Error al guardar usuario: ' + error.message);
   }
 
-  alert('¡Usuario registrado correctamente!');
+  alert(id ? '¡Usuario actualizado correctamente!' : '¡Usuario registrado correctamente!');
+  resetUserForm();
   await loadData();
   render('usuarios');
 }
@@ -706,39 +822,3 @@ function fatal(msg) {
 }
 
 init();
-async function createUserSubmit() {
-  const nombres = $('#uNombres').value.trim();
-  const apellidos = $('#uApellidos').value.trim();
-  const dni = $('#uDni').value.trim();
-  const role = $('#uRole').value;
-  const school_id = $('#uSchool').value;
-
-  if (!nombres || !apellidos || !dni) {
-    return alert('Por favor, completa los datos principales del usuario.');
-  }
-
-  const userData = {
-    id: crypto.randomUUID(), // Genera un UUID válido para que no sea nulo
-    nombres,
-    apellidos,
-    dni,
-    role,
-    activo: true
-  };
-
-  if (school_id && school_id.trim() !== '') {
-    userData.school_id = school_id;
-  }
-
-  const { error } = await window.eduBankSupabase
-    .from('profiles')
-    .insert(userData);
-
-  if (error) {
-    return alert('Error al registrar usuario: ' + error.message);
-  }
-
-  alert('¡Usuario registrado correctamente!');
-  await loadData();
-  render('usuarios');
-}
