@@ -1,477 +1,3 @@
-let me = null;
-let schoolList = [];
-let classes = [];
-let students = [];
-let teachers = [];
-let transactions = [];
-
-const $ = s => document.querySelector(s);
-const $$ = s => document.querySelectorAll(s);
-
-const money = n =>
-  new Intl.NumberFormat('es-PE').format(Number(n) || 0);
-
-const roleNames = {
-  alumno: 'ALUMNO',
-  docente: 'DOCENTE',
-  director: 'DIRECTOR',
-  superadmin: 'SUPERADMIN'
-};
-
-function empty() {
-  return '<div class="empty">No hay registros todavía.</div>';
-}
-
-function move(t) {
-  const esEgreso = t.tipo === 'egreso';
-  return `
-    <div class="move">
-      <i class="${esEgreso ? 'minus' : ''}">
-        ${esEgreso ? '−' : '+'}
-      </i>
-      <div>
-        ${t.concepto || 'Transacción'}
-        <small>${new Date(t.created_at).toLocaleString('es-PE')}</small>
-      </div>
-      <b class="${esEgreso ? 'negative' : ''}">
-        ${esEgreso ? '-' : '+'}${money(t.amount)}
-      </b>
-    </div>
-  `;
-}
-
-function schoolName(id) {
-  if (!id) return 'Sin colegio';
-  return schoolList.find(s => s.id === id)?.name || 'Sin colegio';
-}
-
-function studentName(id) {
-  const st = students.find(s => s.id === id);
-  return st ? `${st.nombres || ''} ${st.apellidos || ''}`.trim() : 'Alumno';
-}
-
-/* =========================================================
-   INICIO
-========================================================= */
-
-async function init() {
-  try {
-    if (!window.eduBankSupabase) {
-      throw new Error('No se encontró la conexión con Supabase.');
-    }
-
-    const {
-      data: { session },
-      error: sessionError
-    } = await window.eduBankSupabase.auth.getSession();
-
-    if (sessionError) throw sessionError;
-
-    if (!session) {
-      location.href = 'login.html';
-      return;
-    }
-
-    const {
-      data: profile,
-      error
-    } = await window.eduBankSupabase
-      .from('profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single();
-
-    if (error || !profile) {
-      await window.eduBankSupabase.auth.signOut();
-      alert('No se encontró el perfil del usuario.');
-      location.href = 'login.html';
-      return;
-    }
-
-    me = profile;
-
-    await loadData();
-    setup();
-
-  } catch (error) {
-    console.error(error);
-    fatal(error.message || String(error));
-  }
-}
-
-/* =========================================================
-   CARGAR DATOS REALES (Esquema Supabase)
-========================================================= */
-
-async function loadData() {
-  const sid = me.school_id;
-
-  /* COLEGIOS */
-  let q = window.eduBankSupabase
-    .from('schools')
-    .select('*')
-    .order('name');
-
-  if (me.role !== 'superadmin' && sid) {
-    q = q.eq('id', sid);
-  }
-
-  let r = await q;
-  if (r.error) {
-    console.warn('Error cargando colegios:', r.error.message);
-  }
-  schoolList = r.data || [];
-
-  /* AULAS */
-  let cq = window.eduBankSupabase
-    .from('classes')
-    .select('*, docente:docente_id(id,nombres,apellidos,role)')
-    .order('nombre');
-
-  if (me.role !== 'superadmin' && sid) {
-    cq = cq.eq('school_id', sid);
-  }
-
-  r = await cq;
-  if (r.error) {
-    console.warn('Error cargando aulas:', r.error.message);
-  }
-  classes = r.data || [];
-
-  /* ALUMNOS */
-  let sq = window.eduBankSupabase
-    .from('profiles')
-    .select('*')
-    .eq('role', 'alumno');
-
-  if (me.role === 'alumno') {
-    sq = sq.eq('id', me.id);
-  } else if (me.role !== 'superadmin' && sid) {
-    sq = sq.eq('school_id', sid);
-  }
-
-  r = await sq.order('created_at', { ascending: false });
-  if (r.error) {
-    console.warn('Error cargando alumnos:', r.error.message);
-  }
-  students = r.data || [];
-
-  /* DOCENTES */
-  let tq = window.eduBankSupabase
-    .from('profiles')
-    .select('*')
-    .eq('role', 'docente');
-
-  if (me.role !== 'superadmin' && sid) {
-    tq = tq.eq('school_id', sid);
-  }
-
-  r = await tq;
-  if (r.error) {
-    console.warn('Error cargando docentes:', r.error.message);
-  }
-  teachers = r.data || [];
-
-  /* MOVIMIENTOS */
-  let txq = window.eduBankSupabase
-    .from('coin_transactions')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(100);
-
-  if (me.role === 'alumno') {
-    txq = txq.eq('student_id', me.id);
-  } else if (me.role !== 'superadmin') {
-    if (students.length) {
-      txq = txq.in('student_id', students.map(s => s.id));
-    } else {
-      transactions = [];
-      return;
-    }
-  }
-
-  r = await txq;
-  if (r.error) {
-    console.warn('Error cargando movimientos:', r.error.message);
-  }
-  transactions = r.data || [];
-}
-
-/* =========================================================
-   CONFIGURACIÓN DEL PANEL
-========================================================= */
-
-function setup() {
-  const fullName = `${me.nombres || ''} ${me.apellidos || ''}`.trim() || 'Usuario';
-
-  $('#hello').textContent = `¡Hola, ${fullName}! 👋`;
-  $('#roleTag').textContent = roleNames[me.role] || me.role.toUpperCase();
-  $('#subtitle').textContent = me.role === 'alumno'
-    ? 'Administra tus EduCoins y toma decisiones financieras.'
-    : 'Gestiona EduBank con datos reales de tu colegio.';
-
-  $('#avatar').textContent = fullName.charAt(0).toUpperCase();
-
-  $('#schoolBadge').textContent = me.role === 'superadmin'
-    ? 'MULTICOLEGIO'
-    : schoolName(me.school_id).toUpperCase();
-
-  navItems();
-  render('inicio');
-}
-
-/* =========================================================
-   MENÚ DE NAVEGACIÓN
-========================================================= */
-
-function navItems() {
-  let common;
-
-  if (me.role === 'alumno') {
-    common = [
-      ['inicio', '⌂', 'Inicio'],
-      ['cuenta', '💰', 'Mi cuenta'],
-      ['movimientos', '↕', 'Movimientos'],
-      ['tienda', '🎁', 'Tienda'],
-      ['prestamos', '💳', 'Préstamos']
-    ];
-  } else if (me.role === 'docente') {
-    common = [
-      ['inicio', '⌂', 'Panel docente'],
-      ['alumnos', '👨‍🎓', 'Alumnos'],
-      ['recompensas', '🪙', 'Entregar EduCoins'],
-      ['movimientos', '↕', 'Movimientos']
-    ];
-  } else if (me.role === 'director') {
-    common = [
-      ['inicio', '⌂', 'Dashboard'],
-      ['aulas', '🏫', 'Aulas'],
-      ['alumnos', '👨‍🎓', 'Alumnos'],
-      ['docentes', '👨‍🏫', 'Docentes'],
-      ['movimientos', '↕', 'Movimientos'],
-      ['reportes', '📊', 'Reportes']
-    ];
-  } else {
-    common = [
-      ['inicio', '⌂', 'Dashboard'],
-      ['colegios', '🏫', 'Colegios'],
-      ['usuarios', '👥', 'Usuarios'],
-      ['movimientos', '↕', 'Movimientos'],
-      ['reportes', '📊', 'Reportes']
-    ];
-  }
-
-  $('#nav').innerHTML = common
-    .map((x, i) => `
-      <a class="${i === 0 ? 'active' : ''}" data-view="${x[0]}">
-        ${x[1]} <span>${x[2]}</span>
-      </a>
-    `)
-    .join('');
-
-  $$('#nav a').forEach(a => {
-    a.onclick = () => {
-      $$('#nav a').forEach(x => x.classList.remove('active'));
-      a.classList.add('active');
-      render(a.dataset.view);
-    };
-  });
-}
-
-function layout(title, body) {
-  return `
-    <section class="view">
-      <div class="viewhead">
-        <div>
-          <div class="tag">${title.toUpperCase()}</div>
-          <h2>${title}</h2>
-        </div>
-      </div>
-      ${body}
-    </section>
-  `;
-}
-
-/* =========================================================
-   DASHBOARD / INICIO
-========================================================= */
-
-function studentHome() {
-  const s = me;
-  if (!s) return layout('Mi cuenta', empty());
-
-  const tx = transactions.filter(t => t.student_id === s.id);
-
-  return `
-    <div class="cards">
-      <div class="maincard">
-        <div>
-          <small>SALDO DISPONIBLE</small>
-          <strong>${money(s.balance || 0)}</strong>
-          <span>EduCoins</span>
-        </div>
-        <div class="cardicon">E</div>
-      </div>
-      <div class="stat">
-        <span>🏫 COLEGIO</span>
-        <b>${schoolName(s.school_id)}</b>
-        <small>Cuenta real</small>
-      </div>
-    </div>
-
-    <div class="columns">
-      <section class="panel">
-        <div class="paneltitle">
-          <h2>Últimos movimientos</h2>
-          <a onclick="render('movimientos')">Ver todos</a>
-        </div>
-        ${tx.slice(0, 6).map(move).join('') || empty()}
-      </section>
-    </div>
-  `;
-}
-
-function adminHome() {
-  const txCount = transactions.length;
-
-  return `
-    <div class="cards">
-      <div class="maincard">
-        <div>
-          <small>SISTEMA EDUBANK</small>
-          <strong>${students.length}</strong>
-          <span>Alumnos en red</span>
-        </div>
-        <div class="cardicon">E</div>
-      </div>
-      <div class="stat">
-        <span>🏫 COLEGIOS</span>
-        <b>${schoolList.length}</b>
-        <small>activos</small>
-      </div>
-      <div class="stat">
-        <span>📊 MOVIMIENTOS</span>
-        <b>${txCount}</b>
-        <small>registros recientes</small>
-      </div>
-    </div>
-  `;
-}
-
-/* =========================================================
-   GESTIÓN DE COLEGIOS (CON EDICIÓN Y DATOS SUPABASE)
-========================================================= */
-
-function colegios() {
-  return layout(
-    'Colegios',
-    `
-      <div class="panel" style="margin-bottom: 20px;">
-        <h2 id="schoolFormTitle">Registrar Nuevo Colegio</h2>
-        <div style="display: grid; gap: 10px; margin-top: 15px;">
-          <input type="hidden" id="editSchoolId" value="">
-          <input type="text" id="newSchoolName" placeholder="Nombre del colegio" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
-          <input type="text" id="newSchoolCode" placeholder="Código modular o abreviatura" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
-          <select id="newSchoolActivo" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
-            <option value="true">Activo</option>
-            <option value="false">Inactivo</option>
-          </select>
-          <div style="display: flex; gap: 10px;">
-            <button class="primary" style="flex: 1;" onclick="saveSchoolSubmit()" id="schoolBtnSubmit">+ Crear Colegio</button>
-            <button id="cancelSchoolEdit" style="display:none; padding: 10px; border-radius: 8px; border: 1px solid #555; background: #333; color: #fff; cursor: pointer;" onclick="resetSchoolForm()">Cancelar</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="paneltitle">
-          <h2>Colegios registrados (${schoolList.length})</h2>
-        </div>
-        ${schoolList.map(s => `
-          <div class="listrow" style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <b>${s.name}</b>
-              <small>Código: ${s.code || '—'} · Creado: ${s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'} · ID: ${s.id}</small>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <span class="status" style="background: ${s.activo !== false ? 'rgba(16, 185, 129, 0.1); color: #34d399;' : 'rgba(239, 68, 68, 0.1); color: #ef4444;'}">
-                ${s.activo !== false ? 'Activo' : 'Inactivo'}
-              </span>
-              <button onclick="editSchool('${s.id}')" style="padding: 6px 12px; border-radius: 6px; background: #2563eb; color: #fff; border: none; cursor: pointer; font-size: 12px;">Editar</button>
-            </div>
-          </div>
-        `).join('') || empty()}
-      </div>
-    `
-  );
-}
-
-function editSchool(id) {
-  const s = schoolList.find(item => item.id === id);
-  if (!s) return;
-
-  $('#editSchoolId').value = s.id;
-  $('#newSchoolName').value = s.name || '';
-  $('#newSchoolCode').value = s.code || '';
-  $('#newSchoolActivo').value = String(s.activo !== false);
-
-  $('#schoolFormTitle').textContent = `Editar Colegio: ${s.name}`;
-  $('#schoolBtnSubmit').textContent = '💾 Actualizar Colegio';
-  $('#cancelSchoolEdit').style.display = 'block';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function resetSchoolForm() {
-  $('#editSchoolId').value = '';
-  $('#newSchoolName').value = '';
-  $('#newSchoolCode').value = '';
-  $('#newSchoolActivo').value = 'true';
-
-  $('#schoolFormTitle').textContent = 'Registrar Nuevo Colegio';
-  $('#schoolBtnSubmit').textContent = '+ Crear Colegio';
-  $('#cancelSchoolEdit').style.display = 'none';
-}
-
-async function saveSchoolSubmit() {
-  const id = $('#editSchoolId').value;
-  const name = $('#newSchoolName').value.trim();
-  const code = $('#newSchoolCode').value.trim();
-  const activo = $('#newSchoolActivo').value === 'true';
-
-  if (!name || !code) {
-    return alert('Por favor, completa el nombre y el código del colegio.');
-  }
-
-  let error;
-  if (id) {
-    // Actualizar
-    const res = await window.eduBankSupabase
-      .from('schools')
-      .update({ name, code, activo })
-      .eq('id', id);
-    error = res.error;
-  } else {
-    // Insertar
-    const res = await window.eduBankSupabase
-      .from('schools')
-      .insert({ name, code, activo });
-    error = res.error;
-  }
-
-  if (error) {
-    return alert('Error al guardar colegio: ' + error.message);
-  }
-
-  alert(id ? '¡Colegio actualizado exitosamente!' : '¡Colegio creado exitosamente!');
-  resetSchoolForm();
-  await loadData();
-  render('colegios');
-}
-
-/* =========================================================
-   GESTIÓN DE USUARIOS (CON EDICIÓN Y DATOS SUPABASE)
-========================================================= */
-
 async function usuarios() {
   let query = window.eduBankSupabase
     .from('profiles')
@@ -491,28 +17,34 @@ async function usuarios() {
     'Usuarios',
     `
       <div class="panel" style="margin-bottom: 20px;">
-        <h2 id="userFormTitle">Registrar Nuevo Usuario / Personal</h2>
+        <h2 id="userFormTitle">Registrar Usuario con Acceso al Sistema</h2>
         <div style="display: grid; gap: 10px; margin-top: 15px;">
           <input type="hidden" id="editUserId" value="">
           <input type="text" id="uNombres" placeholder="Nombres" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
           <input type="text" id="uApellidos" placeholder="Apellidos" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
           <input type="text" id="uDni" placeholder="DNI" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+          <input type="email" id="uEmail" placeholder="Correo electrónico (para acceso al login)" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+          <input type="password" id="uPassword" placeholder="Contraseña provisional (mínimo 6 caracteres)" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+          
           <select id="uRole" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
             <option value="docente">Docente</option>
             <option value="director">Director</option>
             <option value="alumno">Alumno</option>
             <option value="superadmin">Superadmin</option>
           </select>
+
           <select id="uSchool" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
             <option value="">Selecciona un colegio...</option>
             ${schoolList.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
           </select>
+
           <select id="uActivo" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
             <option value="true">Activo</option>
             <option value="false">Inactivo</option>
           </select>
+
           <div style="display: flex; gap: 10px;">
-            <button class="primary" style="flex: 1;" onclick="saveUserSubmit()" id="userBtnSubmit">+ Registrar Usuario en el Sistema</button>
+            <button class="primary" style="flex: 1;" onclick="saveUserWithAuth()" id="userBtnSubmit">+ Crear Usuario y Dar Acceso</button>
             <button id="cancelUserEdit" style="display:none; padding: 10px; border-radius: 8px; border: 1px solid #555; background: #333; color: #fff; cursor: pointer;" onclick="resetUserForm()">Cancelar</button>
           </div>
         </div>
@@ -520,13 +52,13 @@ async function usuarios() {
 
       <div class="panel">
         <div class="paneltitle">
-          <h2>Usuarios del sistema (${window.usersListCache.length})</h2>
+          <h2>Usuarios con acceso al sistema (${window.usersListCache.length})</h2>
         </div>
         ${window.usersListCache.map(p => `
           <div class="listrow" style="display: flex; justify-content: space-between; align-items: center;">
             <div>
               <b>${p.nombres || ''} ${p.apellidos || ''}</b>
-              <small>${roleNames[p.role] || p.role} · DNI: ${p.dni || '—'} · Colegio: ${schoolName(p.school_id)} · Saldo: ${money(p.balance || 0)} 🪙</small>
+              <small>Rol: ${p.role} · DNI: ${p.dni || '—'} · Colegio: ${schoolName(p.school_id)} · Saldo: ${money(p.balance || 0)} 🪙</small>
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
               <span class="status" style="background: ${p.activo !== false ? 'rgba(16, 185, 129, 0.1); color: #34d399;' : 'rgba(239, 68, 68, 0.1); color: #ef4444;'}">
@@ -540,23 +72,81 @@ async function usuarios() {
     `
   );
 }
+async function saveUserWithAuth() {
+  const id = $('#editUserId').value;
+  const nombres = $('#uNombres').value.trim();
+  const apellidos = $('#uApellidos').value.trim();
+  const dni = $('#uDni').value.trim();
+  const email = $('#uEmail').value.trim();
+  const password = $('#uPassword').value.trim();
+  const role = $('#uRole').value;
+  const school_id = $('#uSchool').value;
+  const activo = $('#uActivo').value === 'true';
 
-function editUser(id) {
-  const p = (window.usersListCache || []).find(item => item.id === id);
-  if (!p) return;
+  if (!nombres || !apellidos || !dni) {
+    return alert('Por favor, completa los campos de nombres, apellidos y DNI.');
+  }
 
-  $('#editUserId').value = p.id;
-  $('#uNombres').value = p.nombres || '';
-  $('#uApellidos').value = p.apellidos || '';
-  $('#uDni').value = p.dni || '';
-  $('#uRole').value = p.role || 'docente';
-  $('#uSchool').value = p.school_id || '';
-  $('#uActivo').value = String(p.activo !== false);
+  // Si es un usuario NUEVO, exigimos correo y contraseña para darle acceso
+  if (!id && (!email || !password)) {
+    return alert('Para darle acceso directo al sistema, debes ingresar un correo y una contraseña provisional.');
+  }
 
-  $('#userFormTitle').textContent = `Editar Usuario: ${p.nombres || ''} ${p.apellidos || ''}`;
-  $('#userBtnSubmit').textContent = '💾 Actualizar Usuario';
-  $('#cancelUserEdit').style.display = 'block';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (id) {
+    // Si estamos editando datos existentes en la tabla profiles
+    const userData = { nombres, apellidos, dni, role, activo };
+    if (school_id) userData.school_id = school_id;
+    else userData.school_id = null;
+
+    const { error } = await window.eduBankSupabase
+      .from('profiles')
+      .update(userData)
+      .eq('id', id);
+
+    if (error) return alert('Error al actualizar perfil: ' + error.message);
+    alert('¡Usuario actualizado correctamente!');
+  } else {
+    // Si es NUEVO: Creamos el usuario en Supabase Auth para que tenga acceso al login
+    // Nota: esto creará la cuenta de acceso y la trigger o inserción manejará el perfil
+    const { data: authData, error: authError } = await window.eduBankSupabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          nombres,
+          apellidos,
+          dni,
+          role,
+          school_id: school_id || null
+        }
+      }
+    });
+
+    if (authError) {
+      return alert('Error al crear credenciales de acceso: ' + authError.message);
+    }
+
+    // Por seguridad, aseguramos también la inserción directa en profiles usando el ID generado en Auth si lo devuelve
+    if (authData && authData.user) {
+      const newUserId = authData.user.id;
+      await window.eduBankSupabase.from('profiles').upsert({
+        id: newUserId,
+        nombres,
+        apellidos,
+        dni,
+        role,
+        school_id: school_id || null,
+        activo: true,
+        balance: 0
+      });
+    }
+
+    alert('¡Usuario creado con éxito! Ya puede iniciar sesión en EduBank con su correo y contraseña.');
+  }
+
+  resetUserForm();
+  await loadGlobalData();
+  render('usuarios');
 }
 
 function resetUserForm() {
@@ -564,261 +154,246 @@ function resetUserForm() {
   $('#uNombres').value = '';
   $('#uApellidos').value = '';
   $('#uDni').value = '';
+  $('#uEmail').value = '';
+  $('#uPassword').value = '';
   $('#uRole').value = 'docente';
   $('#uSchool').value = '';
   $('#uActivo').value = 'true';
 
-  $('#userFormTitle').textContent = 'Registrar Nuevo Usuario / Personal';
-  $('#userBtnSubmit').textContent = '+ Registrar Usuario en el Sistema';
+  $('#userFormTitle').textContent = 'Registrar Usuario con Acceso al Sistema';
+  $('#userBtnSubmit').textContent = '+ Crear Usuario y Dar Acceso';
   $('#cancelUserEdit').style.display = 'none';
 }
+/* =========================================================
+   ENRUTADOR DE VISTAS (RENDER)
+========================================================= */
+async function render(view) {
+  let contentHtml = '';
 
-async function saveUserSubmit() {
-  const id = $('#editUserId').value;
-  const nombres = $('#uNombres').value.trim();
-  const apellidos = $('#uApellidos').value.trim();
-  const dni = $('#uDni').value.trim();
-  const role = $('#uRole').value;
-  const school_id = $('#uSchool').value;
-  const activo = $('#uActivo').value === 'true';
-
-  if (!nombres || !apellidos || !dni) {
-    return alert('Por favor, completa los datos principales del usuario.');
-  }
-
-  const userData = {
-    nombres,
-    apellidos,
-    dni,
-    role,
-    activo
-  };
-
-  if (school_id && school_id.trim() !== '') {
-    userData.school_id = school_id;
+  if (me.role === 'alumno') {
+    if (view === 'inicio' || view === 'cuenta') {
+      contentHtml = studentHome();
+    } else if (view === 'movimientos') {
+      contentHtml = movementsView();
+    } else {
+      contentHtml = layout('Tienda', '<div class="panel"><h2>Tienda Escolar</h2><p>Módulo de canjes activo.</p></div>');
+    }
+  } else if (me.role === 'docente') {
+    if (view === 'inicio') {
+      contentHtml = adminHome();
+    } else if (view === 'alumnos') {
+      contentHtml = renderAlumnosList();
+    } else if (view === 'recompensas') {
+      contentHtml = rewardsView();
+    } else if (view === 'movimientos') {
+      contentHtml = movementsView();
+    }
   } else {
-    userData.school_id = null;
+    // Director o Superadmin
+    if (view === 'inicio') {
+      contentHtml = adminHome();
+    } else if (view === 'colegios') {
+      contentHtml = colegiosView();
+    } else if (view === 'usuarios') {
+      contentHtml = await usuarios(); // Carga la vista de usuarios que ya pegaste
+    } else if (view === 'movimientos') {
+      contentHtml = movementsView();
+    } else if (view === 'reportes') {
+      contentHtml = reportsView();
+    } else {
+      contentHtml = adminHome();
+    }
   }
+
+  const contentEl = $('#content');
+  if (contentEl) contentEl.innerHTML = contentHtml;
+}
+function adminHome() {
+  return `
+    <div class="cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+      <div class="stat" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+        <span>👥 TOTAL USUARIOS</span>
+        <h3 style="font-size: 24px; margin: 5px 0 0 0;">${students.length}</h3>
+      </div>
+      <div class="stat" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+        <span>🏫 COLEGIOS EN RED</span>
+        <h3 style="font-size: 24px; margin: 5px 0 0 0;">${schoolList.length}</h3>
+      </div>
+    </div>
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+      <h2>Bienvenido al Panel de Control</h2>
+      <p style="color: #94a3b8;">Usa el menú lateral para gestionar los accesos, los colegios y los registros del sistema EduBank.</p>
+    </div>
+  `;
+}
+
+function studentHome() {
+  return `
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+      <h2>Mi Cuenta Escolar</h2>
+      <p>Saldo actual: <b>${money(me.balance || 0)} EduCoins 🪙</b></p>
+    </div>
+  `;
+}
+
+function renderAlumnosList() {
+  return `
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+      <h2>Alumnos (${students.length})</h2>
+      ${students.map(s => `
+        <div class="listrow" style="padding: 10px 0; border-bottom: 1px solid #334155; display: flex; justify-content: space-between;">
+          <div><b>${s.nombres || ''} ${s.apellidos || ''}</b> <small>(${s.dni || 'Sin DNI'})</small></div>
+          <span>${money(s.balance || 0)} 🪙</span>
+        </div>
+      `).join('') || empty()}
+    </div>
+  `;
+}
+
+function colegiosView() {
+  return `
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+      <h2>Colegios Registrados (${schoolList.length})</h2>
+      ${schoolList.map(s => `
+        <div class="listrow" style="padding: 10px 0; border-bottom: 1px solid #334155;">
+          <b>${s.name}</b> <small>ID: ${s.id}</small>
+        </div>
+      `).join('') || empty()}
+    </div>
+  `;
+}
+
+function movementsView() {
+  return `
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+      <h2>Historial de Movimientos</h2>
+      <p style="color: #94a3b8;">No hay movimientos recientes registrados en este módulo.</p>
+    </div>
+  `;
+}
+
+function reportsView() {
+  return `
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+      <h2>Reportes del Sistema</h2>
+      <p style="color: #94a3b8;">Estadísticas generales de EduBank activas.</p>
+    </div>
+  `;
+}
+
+function rewardsView() {
+  return `
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+      <h2>Entregar Recompensas</h2>
+      <p style="color: #94a3b8;">Módulo de asignación de EduCoins a estudiantes.</p>
+    </div>
+  `;
+}
+function colegiosView() {
+  return `
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+      <h2 id="schoolFormTitle">Registrar Nuevo Colegio</h2>
+      <div style="display: grid; gap: 10px; margin-top: 15px;">
+        <input type="hidden" id="editSchoolId" value="">
+        <input type="text" id="schoolName" placeholder="Nombre del colegio" style="padding: 10px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+        <input type="text" id="schoolCode" placeholder="Código modular o abreviatura" style="padding: 10px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+        
+        <select id="schoolActivo" style="padding: 10px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+          <option value="true">Activo</option>
+          <option value="false">Inactivo</option>
+        </select>
+
+        <div style="display: flex; gap: 10px;">
+          <button class="primary" style="flex: 1; padding: 10px; border-radius: 6px; border: none; background: #0284c7; color: white; font-weight: bold; cursor: pointer;" onclick="saveSchoolSubmit()" id="schoolBtnSubmit">+ Crear Colegio</button>
+          <button id="cancelSchoolEdit" style="display:none; padding: 10px; border-radius: 6px; border: 1px solid #475569; background: #334155; color: #fff; cursor: pointer;" onclick="resetSchoolForm()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="background: #1e293b; padding: 20px; border-radius: 8px;">
+      <h2>Colegios Registrados en el Sistema (${schoolList.length})</h2>
+      <div style="margin-top: 15px;">
+        ${schoolList.map(s => `
+          <div class="listrow" style="padding: 12px 0; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <b style="font-size: 16px;">${s.name}</b><br>
+              <small style="color: #94a3b8;">Código: ${s.code || '—'} · ID: ${s.id}</small>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="status" style="padding: 4px 8px; border-radius: 4px; font-size: 12px; background: ${s.activo !== false ? 'rgba(16, 185, 129, 0.1); color: #34d399;' : 'rgba(239, 68, 68, 0.1); color: #ef4444;'}">
+                ${s.activo !== false ? 'Activo' : 'Inactivo'}
+              </span>
+              <button onclick="editSchool('${s.id}')" style="padding: 6px 12px; border-radius: 6px; background: #2563eb; color: #fff; border: none; cursor: pointer; font-size: 12px;">Editar</button>
+            </div>
+          </div>
+        `).join('') || empty()}
+      </div>
+    </div>
+  `;
+}
+function editSchool(id) {
+  const s = schoolList.find(item => item.id === id);
+  if (!s) return;
+
+  $('#editSchoolId').value = s.id;
+  $('#schoolName').value = s.name || '';
+  $('#schoolCode').value = s.code || '';
+  $('#schoolActivo').value = String(s.activo !== false);
+
+  $('#schoolFormTitle').textContent = `Editar Colegio: ${s.name}`;
+  $('#schoolBtnSubmit').textContent = '💾 Actualizar Colegio';
+  $('#cancelSchoolEdit').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function resetSchoolForm() {
+  $('#editSchoolId').value = '';
+  $('#schoolName').value = '';
+  $('#schoolCode').value = '';
+  $('#schoolActivo').value = 'true';
+
+  $('#schoolFormTitle').textContent = 'Registrar Nuevo Colegio';
+  $('#schoolBtnSubmit').textContent = '+ Crear Colegio';
+  $('#cancelSchoolEdit').style.display = 'none';
+}
+
+async function saveSchoolSubmit() {
+  const id = $('#editSchoolId').value;
+  const name = $('#schoolName').value.trim();
+  const code = $('#schoolCode').value.trim();
+  const activo = $('#schoolActivo').value === 'true';
+
+  if (!name || !code) {
+    return alert('Por favor, ingresa el nombre y el código del colegio.');
+  }
+
+  const schoolData = { name, code, activo };
 
   let error;
   if (id) {
-    // Actualizar usuario existente
+    // Actualizar colegio existente
     const res = await window.eduBankSupabase
-      .from('profiles')
-      .update(userData)
+      .from('schools')
+      .update(schoolData)
       .eq('id', id);
     error = res.error;
   } else {
-    // Insertar nuevo usuario
+    // Insertar nuevo colegio
     const res = await window.eduBankSupabase
-      .from('profiles')
-      .insert(userData);
+      .from('schools')
+      .insert([schoolData]);
     error = res.error;
   }
 
   if (error) {
-    return alert('Error al guardar usuario: ' + error.message);
+    return alert('Error al guardar el colegio: ' + error.message);
   }
 
-  alert(id ? '¡Usuario actualizado correctamente!' : '¡Usuario registrado correctamente!');
-  resetUserForm();
-  await loadData();
-  render('usuarios');
+  alert(id ? '¡Colegio actualizado correctamente!' : '¡Colegio creado con éxito!');
+  resetSchoolForm();
+  await loadGlobalData(); // Recarga las listas globales
+  render('colegios');      // Vuelve a pintar la vista
 }
-
-/* =========================================================
-   OTRAS VISTAS
-========================================================= */
-
-function renderAlumnos() {
-  return layout(
-    'Alumnos',
-    `
-      <div class="panel">
-        <div class="paneltitle">
-          <h2>Alumnos registrados (${students.length})</h2>
-        </div>
-        ${students.map(s => `
-          <div class="listrow">
-            <div>
-              <b>${s.nombres || ''} ${s.apellidos || ''}</b>
-              <small>DNI: ${s.dni || '—'} · Colegio: ${schoolName(s.school_id)}</small>
-            </div>
-            <strong>${money(s.balance || 0)} 🪙</strong>
-          </div>
-        `).join('') || empty()}
-      </div>
-    `
-  );
+} else if (view === 'colegios') {
+  contentHtml = colegiosView();
 }
-
-function rewards() {
-  return layout(
-    'Entregar EduCoins',
-    `
-      <div class="panel">
-        <h2>Registrar recompensa</h2>
-        <div style="display: grid; gap: 10px; margin-top: 15px;">
-          <select id="rewardStudent" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
-            ${students.map(s => `<option value="${s.id}">${s.nombres || ''} ${s.apellidos || ''} (${s.dni || 'Sin DNI'})</option>`).join('')}
-          </select>
-          <input id="rewardAmount" type="number" min="1" placeholder="Cantidad de EduCoins" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
-          <input id="rewardTitle" placeholder="Concepto o motivo" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
-          <button class="primary" onclick="grantReward()">Entregar EduCoins</button>
-        </div>
-      </div>
-    `
-  );
-}
-
-async function grantReward() {
-  const student_id = $('#rewardStudent').value;
-  const amount = Number($('#rewardAmount').value);
-  const concepto = $('#rewardTitle').value.trim();
-
-  if (!student_id || !amount || amount < 1 || !concepto) {
-    return alert('Completa todos los campos correctamente.');
-  }
-
-  const { error } = await window.eduBankSupabase
-    .from('coin_transactions')
-    .insert({
-      student_id,
-      school_id: me.school_id || students.find(s => s.id === student_id)?.school_id,
-      amount,
-      tipo: 'ingreso',
-      concepto,
-      created_by: me.id
-    });
-
-  if (error) return alert('Error al registrar: ' + error.message);
-  await loadData();
-  render('recompensas');
-  alert('¡EduCoins entregados con éxito!');
-}
-
-function aulas() {
-  return layout(
-    'Aulas',
-    `
-      <div class="panel">
-        <div class="paneltitle"><h2>Aulas reales (${classes.length})</h2></div>
-        ${classes.map(c => `
-          <div class="listrow">
-            <div>
-              <b>${c.nombre} ${c.seccion || ''}</b>
-              <small>Tutor: ${c.docente ? `${c.docente.nombres} ${c.docente.apellidos}` : 'Sin asignar'} · Colegio: ${schoolName(c.school_id)}</small>
-            </div>
-            <strong>${students.filter(s => s.class_id === c.id).length} alumnos</strong>
-          </div>
-        `).join('') || empty()}
-      </div>
-    `
-  );
-}
-
-function docentes() {
-  return layout(
-    'Docentes',
-    `
-      <div class="panel">
-        <div class="paneltitle"><h2>Docentes del sistema (${teachers.length})</h2></div>
-        ${teachers.map(t => `
-          <div class="listrow">
-            <div>
-              <b>${t.nombres || ''} ${t.apellidos || ''}</b>
-              <small>DNI: ${t.dni || 'Sin DNI'} · Colegio: ${schoolName(t.school_id)}</small>
-            </div>
-            <span class="status">Activo</span>
-          </div>
-        `).join('') || empty()}
-      </div>
-    `
-  );
-}
-
-function movements() {
-  return layout(
-    'Movimientos',
-    `<div class="panel">${transactions.map(t => move({ ...t, concepto: `${studentName(t.student_id)} · ${t.concepto}` })).join('') || empty()}</div>`
-  );
-}
-
-function reportes() {
-  const total = students.reduce((a, s) => a + Number(s.balance || 0), 0);
-  const ingresos = transactions.filter(t => t.tipo === 'ingreso').reduce((a, t) => a + Number(t.amount || 0), 0);
-  const egresos = transactions.filter(t => t.tipo === 'egreso').reduce((a, t) => a + Number(t.amount || 0), 0);
-
-  return layout(
-    'Reportes',
-    `
-      <div class="cards">
-        <div class="stat"><span>🪙 SALDO GLOBAL</span><b>${money(total)}</b><small>EduCoins</small></div>
-        <div class="stat"><span>↗ INGRESOS</span><b>${money(ingresos)}</b><small>total</small></div>
-        <div class="stat"><span>↘ EGRESOS</span><b>${money(egresos)}</b><small>total</small></div>
-      </div>
-    `
-  );
-}
-
-function store() {
-  return layout(
-    'Tienda',
-    `
-      <div class="panel">
-        <h2>Tienda escolar</h2>
-        <div class="grid" style="margin-top: 15px;">
-          <article style="padding: 15px; border: 1px solid #333; border-radius: 8px;">
-            <em>📓</em>
-            <h3>Cuaderno premium</h3>
-            <p>200 EduCoins</p>
-            <button class="primary" onclick="alert('Canje en desarrollo')" style="margin-top: 10px;">Canjear</button>
-          </article>
-        </div>
-      </div>
-    `
-  );
-}
-
-function loans() {
-  return layout(
-    'Préstamos',
-    `<div class="panel"><h2>Simulador de créditos</h2><p class="muted">Módulo disponible para solicitudes de crédito escolar.</p></div>`
-  );
-}
-
-/* =========================================================
-   ENRUTADOR DE VISTAS (RENDER)
-========================================================= */
-
-async function render(v) {
-  let out;
-  if (me.role === 'alumno') {
-    out = v === 'inicio' ? studentHome() :
-          v === 'cuenta' ? studentHome() :
-          v === 'movimientos' ? movements() :
-          v === 'tienda' ? store() : loans();
-  } else {
-    out = v === 'inicio' ? adminHome() :
-          v === 'alumnos' ? renderAlumnos() :
-          v === 'recompensas' ? rewards() :
-          v === 'aulas' ? aulas() :
-          v === 'docentes' ? docentes() :
-          v === 'colegios' ? colegios() :
-          v === 'usuarios' ? await usuarios() :
-          v === 'reportes' ? reportes() : movements();
-  }
-  $('#content').innerHTML = out;
-}
-
-async function logout() {
-  await window.eduBankSupabase.auth.signOut();
-  location.href = 'login.html';
-}
-
-function fatal(msg) {
-  console.error(msg);
-  $('#content').innerHTML = `<div class="panel"><h2>Error en EduBank</h2><p class="errorbox">${msg}</p></div>`;
-}
-
-init();
