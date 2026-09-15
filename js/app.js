@@ -706,3 +706,39 @@ function fatal(msg) {
 }
 
 init();
+async function createUserSubmit() {
+  const nombres = $('#uNombres').value.trim();
+  const apellidos = $('#uApellidos').value.trim();
+  const dni = $('#uDni').value.trim();
+  const role = $('#uRole').value;
+  const school_id = $('#uSchool').value;
+
+  if (!nombres || !apellidos || !dni) {
+    return alert('Por favor, completa los datos principales del usuario.');
+  }
+
+  const userData = {
+    id: crypto.randomUUID(), // Genera un UUID válido para que no sea nulo
+    nombres,
+    apellidos,
+    dni,
+    role,
+    activo: true
+  };
+
+  if (school_id && school_id.trim() !== '') {
+    userData.school_id = school_id;
+  }
+
+  const { error } = await window.eduBankSupabase
+    .from('profiles')
+    .insert(userData);
+
+  if (error) {
+    return alert('Error al registrar usuario: ' + error.message);
+  }
+
+  alert('¡Usuario registrado correctamente!');
+  await loadData();
+  render('usuarios');
+}
