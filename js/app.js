@@ -626,3 +626,148 @@ function fatal(msg) {
 }
 
 init();
+/* =========================================================
+   GESTIÓN DE COLEGIOS (SUPERADMIN)
+========================================================= */
+function colegios() {
+  return layout(
+    'Colegios',
+    `
+      <div class="panel" style="margin-bottom: 20px;">
+        <h2>Registrar Nuevo Colegio</h2>
+        <div style="display: grid; gap: 10px; margin-top: 15px;">
+          <input type="text" id="newSchoolName" placeholder="Nombre del colegio (Ej: San Martín)" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+          <input type="text" id="newSchoolCode" placeholder="Código modular o abreviatura (Ej: SM-01)" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+          <button class="primary" onclick="createSchoolSubmit()">+ Crear Colegio</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="paneltitle">
+          <h2>Colegios registrados (${schoolList.length})</h2>
+        </div>
+        ${schoolList.map(s => `
+          <div class="listrow">
+            <div>
+              <b>${s.name}</b>
+              <small>Código: ${s.code || '—'} · ID: ${s.id}</small>
+            </div>
+            <span class="status">Activo</span>
+          </div>
+        `).join('') || empty()}
+      </div>
+    `
+  );
+}
+
+async function createSchoolSubmit() {
+  const name = $('#newSchoolName').value.trim();
+  const code = $('#newSchoolCode').value.trim();
+
+  if (!name || !code) {
+    return alert('Por favor, completa el nombre y el código del colegio.');
+  }
+
+  const { error } = await window.eduBankSupabase
+    .from('schools')
+    .insert({ name, code, activo: true });
+
+  if (error) {
+    return alert('Error al crear colegio: ' + error.message);
+  }
+
+  alert('¡Colegio creado exitosamente!');
+  await loadData();
+  render('colegios');
+}
+
+
+/* =========================================================
+   GESTIÓN DE USUARIOS Y ASIGNACIÓN MULTICOLEGIO
+========================================================= */
+async function usuarios() {
+  let query = window.eduBankSupabase
+    .from('profiles')
+    .select('id, nombres, apellidos, dni, role, school_id, activo')
+    .order('nombres');
+
+  if (me.role !== 'superadmin') {
+    query = query.eq('school_id', me.school_id);
+  }
+
+  const { data, error } = await query;
+  if (error) return layout('Usuarios', `<div class="panel"><h2>Error</h2><p>${error.message}</p></div>`);
+
+  const users = data || [];
+
+  return layout(
+    'Usuarios',
+    `
+      <div class="panel" style="margin-bottom: 20px;">
+        <h2>Registrar Nuevo Usuario / Personal</h2>
+        <div style="display: grid; gap: 10px; margin-top: 15px;">
+          <input type="text" id="uNombres" placeholder="Nombres" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+          <input type="text" id="uApellidos" placeholder="Apellidos" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+          <input type="text" id="uDni" placeholder="DNI" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+          <select id="uRole" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+            <option value="docente">Docente</option>
+            <option value="director">Director</option>
+            <option value="alumno">Alumno</option>
+            <option value="superadmin">Superadmin</option>
+          </select>
+          <select id="uSchool" style="padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+            ${schoolList.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+          </select>
+          <button class="primary" onclick="createUserSubmit()">+ Registrar Usuario en el Sistema</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="paneltitle">
+          <h2>Usuarios del sistema (${users.length})</h2>
+        </div>
+        ${users.map(p => `
+          <div class="listrow">
+            <div>
+              <b>${p.nombres || ''} ${p.apellidos || ''}</b>
+              <small>${roleNames[p.role] || p.role} · DNI: ${p.dni || '—'} · Colegio: ${schoolName(p.school_id)}</small>
+            </div>
+            <span class="status">${p.activo === false ? 'Inactivo' : 'Activo'}</span>
+          </div>
+        `).join('') || empty()}
+      </div>
+    `
+  );
+}
+
+async function createUserSubmit() {
+  const nombres = $('#uNombres').value.trim();
+  const apellidos = $('#uApellidos').value.trim();
+  const dni = $('#uDni').value.trim();
+  const role = $('#uRole').value;
+  const school_id = $('#uSchool').value;
+
+  if (!nombres || !apellidos || !dni) {
+    return alert('Por favor, completa los datos principales del usuario.');
+  }
+
+  // Nota: Para crear cuentas de auth completas se requiere correo, 
+  // aquí registramos el perfil directamente o vinculamos por DNI.
+  const { error } = await window.eduBankSupabase
+    .from('profiles')
+    .insert({
+      nombres,
+      apellidos,
+      dni,
+      role,
+      school_id,
+      activo: true
+    });
+
+  if (error) {
+    return alert('Error al registrar usuario: ' + error.message);
+  }
+
+  alert('¡Usuario registrado correctamente!');
+  render('usuarios');
+}
