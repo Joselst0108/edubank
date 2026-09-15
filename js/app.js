@@ -18,28 +18,23 @@ const roleNames = {
   superadmin: 'SUPERADMIN'
 };
 
-const level = xp =>
-  xp >= 1000 ? 'Experto' :
-  xp >= 700 ? 'Financiero' :
-  xp >= 400 ? 'Ahorrador' :
-  'Principiante';
-
 function empty() {
   return '<div class="empty">No hay registros todavía.</div>';
 }
 
 function move(t) {
+  const esEgreso = t.tipo === 'egreso';
   return `
     <div class="move">
-      <i class="${t.type === 'out' ? 'minus' : ''}">
-        ${t.type === 'out' ? '−' : '+'}
+      <i class="${esEgreso ? 'minus' : ''}">
+        ${esEgreso ? '−' : '+'}
       </i>
       <div>
-        ${t.title}
-        <small>${t.meta || new Date(t.created_at).toLocaleString('es-PE')}</small>
+        ${t.concepto || 'Transacción'}
+        <small>${new Date(t.created_at).toLocaleString('es-PE')}</small>
       </div>
-      <b class="${Number(t.amount) < 0 ? 'negative' : ''}">
-        ${Number(t.amount) > 0 ? '+' : ''}${money(t.amount)}
+      <b class="${esEgreso ? 'negative' : ''}">
+        ${esEgreso ? '-' : '+'}${money(t.amount)}
       </b>
     </div>
   `;
@@ -50,7 +45,8 @@ function schoolName(id) {
 }
 
 function studentName(id) {
-  return students.find(s => s.id === id)?.profile?.full_name || 'Alumno';
+  const st = students.find(s => s.id === id);
+  return st ? `${st.nombres || ''} ${st.apellidos || ''}`.trim() : 'Alumno';
 }
 
 /* =========================================================
@@ -103,15 +99,13 @@ async function init() {
 }
 
 /* =========================================================
-   CARGAR DATOS REALES
+   CARGAR DATOS REALES (Esquema Supabase corregido)
 ========================================================= */
 
 async function loadData() {
-
   const sid = me.school_id;
 
   /* COLEGIOS */
-
   let q = window.eduBankSupabase
     .from('schools')
     .select('*')
@@ -122,61 +116,46 @@ async function loadData() {
   }
 
   let r = await q;
-
   if (r.error) {
     return fatal('Error cargando colegios: ' + r.error.message);
   }
-
   schoolList = r.data || [];
 
-
-  /* AULAS */
-
+  /* AULAS (usando docente_id y nombres/apellidos) */
   let cq = window.eduBankSupabase
     .from('classes')
-    .select('*, teacher:teacher_id(id,full_name,role)')
-    .order('name');
+    .select('*, docente:docente_id(id,nombres,apellidos,role)')
+    .order('nombre');
 
   if (me.role !== 'superadmin') {
     cq = cq.eq('school_id', sid);
   }
 
   r = await cq;
-
   if (r.error) {
     return fatal('Error cargando aulas: ' + r.error.message);
   }
-
   classes = r.data || [];
 
-
-  /* ALUMNOS */
-
+  /* ALUMNOS (perfiles con rol alumno) */
   let sq = window.eduBankSupabase
-    .from('students')
-    .select(`
-      *,
-      profile:profile_id(id,full_name,dni,role),
-      class:class_id(id,name)
-    `);
+    .from('profiles')
+    .select('*')
+    .eq('role', 'alumno');
 
   if (me.role === 'alumno') {
-    sq = sq.eq('profile_id', me.id);
+    sq = sq.eq('id', me.id);
   } else if (me.role !== 'superadmin') {
     sq = sq.eq('school_id', sid);
   }
 
   r = await sq.order('created_at', { ascending: false });
-
   if (r.error) {
     return fatal('Error cargando alumnos: ' + r.error.message);
   }
-
   students = r.data || [];
 
-
   /* DOCENTES */
-
   let tq = window.eduBankSupabase
     .from('profiles')
     .select('*')
@@ -187,33 +166,23 @@ async function loadData() {
   }
 
   r = await tq;
-
   if (r.error) {
     return fatal('Error cargando docentes: ' + r.error.message);
   }
-
   teachers = r.data || [];
 
-
-  /* MOVIMIENTOS */
-
+  /* MOVIMIENTOS (usando coin_transactions) */
   let txq = window.eduBankSupabase
-    .from('transactions')
+    .from('coin_transactions')
     .select('*')
     .order('created_at', { ascending: false })
     .limit(100);
 
-  if (me.role === 'alumno' && students[0]) {
-
-    txq = txq.eq('student_id', students[0].id);
-
+  if (me.role === 'alumno') {
+    txq = txq.eq('student_id', me.id);
   } else if (me.role !== 'superadmin') {
-
     if (students.length) {
-      txq = txq.in(
-        'student_id',
-        students.map(s => s.id)
-      );
+      txq = txq.in('student_id', students.map(s => s.id));
     } else {
       transactions = [];
       return;
@@ -221,11 +190,9 @@ async function loadData() {
   }
 
   r = await txq;
-
   if (r.error) {
     return fatal('Error cargando movimientos: ' + r.error.message);
   }
-
   transactions = r.data || [];
 }
 
@@ -234,42 +201,32 @@ async function loadData() {
 ========================================================= */
 
 function setup() {
+  const fullName = `${me.nombres || ''} ${me.apellidos || ''}`.trim() || 'Usuario';
 
-  const name = me.full_name || 'Usuario';
+  $('#hello').textContent = `¡Hola, ${fullName}! 👋`;
+  $('#roleTag').textContent = roleNames[me.role] || me.role.toUpperCase();
+  $('#subtitle').textContent = me.role === 'alumno'
+    ? 'Administra tus EduCoins y toma decisiones financieras.'
+    : 'Gestiona EduBank con datos reales de tu colegio.';
 
-  $('#hello').textContent = `¡Hola, ${name}! 👋`;
+  $('#avatar').textContent = fullName.charAt(0).toUpperCase();
 
-  $('#roleTag').textContent =
-    roleNames[me.role] || me.role.toUpperCase();
-
-  $('#subtitle').textContent =
-    me.role === 'alumno'
-      ? 'Administra tus EduCoins y aprende tomando decisiones.'
-      : 'Gestiona EduBank con datos reales de tu colegio.';
-
-  $('#avatar').textContent =
-    name.charAt(0).toUpperCase();
-
-  $('#schoolBadge').textContent =
-    me.role === 'superadmin'
-      ? 'MULTICOLEGIO'
-      : schoolName(me.school_id).toUpperCase();
+  $('#schoolBadge').textContent = me.role === 'superadmin'
+    ? 'MULTICOLEGIO'
+    : schoolName(me.school_id).toUpperCase();
 
   navItems();
-
   render('inicio');
 }
 
 /* =========================================================
-   MENÚ
+   MENÚ DE NAVEGACIÓN
 ========================================================= */
 
 function navItems() {
-
   let common;
 
   if (me.role === 'alumno') {
-
     common = [
       ['inicio', '⌂', 'Inicio'],
       ['cuenta', '💰', 'Mi cuenta'],
@@ -277,18 +234,14 @@ function navItems() {
       ['tienda', '🎁', 'Tienda'],
       ['prestamos', '💳', 'Préstamos']
     ];
-
   } else if (me.role === 'docente') {
-
     common = [
       ['inicio', '⌂', 'Panel docente'],
       ['alumnos', '👨‍🎓', 'Alumnos'],
       ['recompensas', '🪙', 'Entregar EduCoins'],
       ['historial', '↕', 'Movimientos']
     ];
-
   } else if (me.role === 'director') {
-
     common = [
       ['inicio', '⌂', 'Dashboard'],
       ['aulas', '🏫', 'Aulas'],
@@ -297,9 +250,7 @@ function navItems() {
       ['movimientos', '↕', 'Movimientos'],
       ['reportes', '📊', 'Reportes']
     ];
-
   } else {
-
     common = [
       ['inicio', '⌂', 'Dashboard'],
       ['colegios', '🏫', 'Colegios'],
@@ -318,410 +269,155 @@ function navItems() {
     .join('');
 
   $$('#nav a').forEach(a => {
-
     a.onclick = () => {
-
-      $$('#nav a').forEach(x =>
-        x.classList.remove('active')
-      );
-
+      $$('#nav a').forEach(x => x.classList.remove('active'));
       a.classList.add('active');
-
       render(a.dataset.view);
     };
-
   });
 }
 
-/* =========================================================
-   ESTRUCTURA
-========================================================= */
-
 function layout(title, body) {
-
   return `
     <section class="view">
-
       <div class="viewhead">
-
         <div>
           <div class="tag">${title.toUpperCase()}</div>
           <h2>${title}</h2>
         </div>
-
       </div>
-
       ${body}
-
     </section>
   `;
 }
 
 /* =========================================================
-   DASHBOARD
+   DASHBOARD / INICIO
 ========================================================= */
 
 function studentHome() {
+  const s = me;
+  if (!s) return layout('Mi cuenta', empty());
 
-  const s = students[0];
-
-  if (!s) {
-    return layout('Mi cuenta', empty());
-  }
-
-  const tx =
-    transactions.filter(t => t.student_id === s.id);
+  const tx = transactions.filter(t => t.student_id === s.id);
 
   return `
     <div class="cards">
-
       <div class="maincard">
-
         <div>
           <small>SALDO DISPONIBLE</small>
-
-          <strong>${money(s.balance)}</strong>
-
+          <strong>${money(s.balance || 0)}</strong>
           <span>EduCoins</span>
         </div>
-
         <div class="cardicon">E</div>
-
-        <div class="meter">
-
-          <b style="
-            width:${Math.min(
-              100,
-              s.goal
-                ? Math.round(s.balance / s.goal * 100)
-                : 0
-            )}%
-          "></b>
-
-        </div>
-
-        <small>
-          Meta de ahorro:
-          ${money(s.goal)} EduCoins
-        </small>
-
       </div>
-
-      <div class="stat">
-        <span>🏆 NIVEL</span>
-        <b>${level(s.xp)}</b>
-        <small>${s.xp} XP</small>
-      </div>
-
       <div class="stat">
         <span>🏫 COLEGIO</span>
         <b>${schoolName(s.school_id)}</b>
         <small>Cuenta real</small>
       </div>
-
     </div>
 
     <div class="columns">
-
       <section class="panel">
-
         <div class="paneltitle">
           <h2>Últimos movimientos</h2>
-          <a onclick="render('movimientos')">
-            Ver todos
-          </a>
+          <a onclick="render('movimientos')">Ver todos</a>
         </div>
-
-        ${
-          tx.slice(0, 6).map(move).join('')
-          || empty()
-        }
-
+        ${tx.slice(0, 6).map(move).join('') || empty()}
       </section>
-
-      <section class="challenge">
-
-        <span>EDUBANK REAL</span>
-
-        <h2>Tu cuenta está conectada</h2>
-
-        <p>
-          Saldo, XP y movimientos provienen
-          directamente de Supabase.
-        </p>
-
-      </section>
-
     </div>
   `;
 }
 
 function adminHome() {
-
-  const total =
-    students.reduce(
-      (a, s) => a + Number(s.balance || 0),
-      0
-    );
-
-  const tx = transactions.length;
+  const txCount = transactions.length;
 
   return `
     <div class="cards">
-
       <div class="maincard">
-
         <div>
-          <small>SALDO TOTAL</small>
-
-          <strong>${money(total)}</strong>
-
-          <span>
-            EduCoins en cuentas visibles
-          </span>
+          <small>SISTEMA EDUBANK</small>
+          <strong>${students.length}</strong>
+          <span>Alumnos en red</span>
         </div>
-
         <div class="cardicon">E</div>
-
       </div>
-
       <div class="stat">
         <span>🏫 COLEGIOS</span>
         <b>${schoolList.length}</b>
-        <small>accesibles</small>
+        <small>activos</small>
       </div>
-
       <div class="stat">
-        <span>👨‍🎓 ALUMNOS</span>
-        <b>${students.length}</b>
-        <small>registros reales</small>
+        <span>📊 MOVIMIENTOS</span>
+        <b>${txCount}</b>
+        <small>registros recientes</small>
       </div>
-
-    </div>
-
-    <div class="admincards">
-
-      <div class="panel">
-
-        <div class="paneltitle">
-          <h2>Resumen</h2>
-        </div>
-
-        <div class="listrow">
-          <div>
-            <b>Aulas</b>
-            <small>registradas</small>
-          </div>
-          <strong>${classes.length}</strong>
-        </div>
-
-        <div class="listrow">
-          <div>
-            <b>Docentes</b>
-            <small>perfiles docentes</small>
-          </div>
-          <strong>${teachers.length}</strong>
-        </div>
-
-        <div class="listrow">
-          <div>
-            <b>Movimientos</b>
-            <small>últimos 100</small>
-          </div>
-          <strong>${tx}</strong>
-        </div>
-
-      </div>
-
-      <div class="panel">
-
-        <div class="paneltitle">
-          <h2>Actividad reciente</h2>
-        </div>
-
-        ${
-          transactions
-            .slice(0, 6)
-            .map(t =>
-              move({
-                ...t,
-                title:
-                  studentName(t.student_id)
-                  + ' · '
-                  + t.title
-              })
-            )
-            .join('')
-          || empty()
-        }
-
-      </div>
-
     </div>
   `;
 }
 
 /* =========================================================
-   ALUMNOS
+   VISTAS DEL SISTEMA
 ========================================================= */
 
 function renderAlumnos() {
-
   return layout(
     'Alumnos',
     `
       <div class="panel">
-
         <div class="paneltitle">
-
-          <h2>Alumnos reales</h2>
-
-          ${
-            ['superadmin', 'director'].includes(me.role)
-              ? `
-                <button
-                  class="primary smallbtn"
-                  onclick="addStudent()">
-                  + Alumno
-                </button>
-              `
-              : ''
-          }
-
+          <h2>Alumnos registrados</h2>
         </div>
-
-        ${
-          students.map(s => `
-            <div class="listrow">
-
-              <div>
-                <b>
-                  ${s.profile?.full_name || 'Sin nombre'}
-                </b>
-
-                <small>
-                  DNI:
-                  ${s.profile?.dni || '—'}
-                  ·
-                  ${s.class?.name || 'Sin aula'}
-                </small>
-              </div>
-
-              <strong>
-                ${money(s.balance)} 🪙
-              </strong>
-
+        ${students.map(s => `
+          <div class="listrow">
+            <div>
+              <b>${s.nombres || ''} ${s.apellidos || ''}</b>
+              <small>DNI: ${s.dni || '—'}</small>
             </div>
-          `).join('')
-          || empty()
-        }
-
+            <strong>${money(s.balance || 0)} 🪙</strong>
+          </div>
+        `).join('') || empty()}
       </div>
     `
   );
 }
 
-/* =========================================================
-   COLEGIOS
-========================================================= */
-
 function colegios() {
-
   return layout(
     'Colegios',
     `
       <div class="panel">
-
         <div class="paneltitle">
-
           <h2>Colegios registrados</h2>
-
-          ${
-            me.role === 'superadmin'
-              ? `
-                <button
-                  class="primary smallbtn"
-                  onclick="addSchool()">
-                  + Nuevo colegio
-                </button>
-              `
-              : ''
-          }
-
+          ${me.role === 'superadmin' ? `<button class="primary smallbtn" onclick="addSchool()">+ Nuevo colegio</button>` : ''}
         </div>
-
-        ${
-          schoolList.map(s => `
-            <div class="listrow">
-
-              <div>
-
-                <b>${s.name}</b>
-
-                <small>
-                  Código:
-                  ${s.code || '—'}
-                  ·
-                  ${s.city || 'Sin ciudad'}
-                </small>
-
-              </div>
-
-              <span class="status">
-                ${s.active ? 'Activo' : 'Inactivo'}
-              </span>
-
+        ${schoolList.map(s => `
+          <div class="listrow">
+            <div>
+              <b>${s.name}</b>
+              <small>Código: ${s.code || '—'} · ${s.city || 'Sin ciudad'}</small>
             </div>
-          `).join('')
-          || empty()
-        }
-
+            <span class="status">Activo</span>
+          </div>
+        `).join('') || empty()}
       </div>
     `
   );
 }
 
-/* =========================================================
-   USUARIOS
-========================================================= */
-
 async function usuarios() {
-
   let query = window.eduBankSupabase
     .from('profiles')
-    .select(`
-      id,
-      full_name,
-      dni,
-      role,
-      school_id,
-      active
-    `)
-    .order('full_name');
+    .select('id, nombres, apellidos, dni, role, school_id, activo')
+    .order('nombres');
 
   if (me.role !== 'superadmin') {
     query = query.eq('school_id', me.school_id);
   }
 
   const { data, error } = await query;
-
-  if (error) {
-
-    return layout(
-      'Usuarios',
-      `
-        <div class="panel">
-
-          <h2>Error cargando usuarios</h2>
-
-          <p class="errorbox">
-            ${error.message}
-          </p>
-
-        </div>
-      `
-    );
-  }
+  if (error) return layout('Usuarios', `<div class="panel"><h2>Error</h2><p>${error.message}</p></div>`);
 
   const users = data || [];
 
@@ -729,885 +425,204 @@ async function usuarios() {
     'Usuarios',
     `
       <div class="panel">
-
         <div class="paneltitle">
-
           <h2>Usuarios del sistema</h2>
-
-          ${
-            me.role === 'superadmin'
-              ? `
-                <button
-                  class="primary smallbtn"
-                  onclick="addUser()">
-                  + Nuevo usuario
-                </button>
-              `
-              : ''
-          }
-
         </div>
-
-        ${
-          users.map(p => `
-            <div class="listrow">
-
-              <div>
-
-                <b>
-                  ${p.full_name || 'Sin nombre'}
-                </b>
-
-                <small>
-
-                  ${roleNames[p.role] || p.role}
-
-                  · DNI:
-                  ${p.dni || '—'}
-
-                  · Colegio:
-                  ${schoolName(p.school_id)}
-
-                </small>
-
-              </div>
-
-              <span class="status">
-                ${p.active === false ? 'Inactivo' : 'Activo'}
-              </span>
-
+        ${users.map(p => `
+          <div class="listrow">
+            <div>
+              <b>${p.nombres || ''} ${p.apellidos || ''}</b>
+              <small>${roleNames[p.role] || p.role} · DNI: ${p.dni || '—'} · Colegio: ${schoolName(p.school_id)}</small>
             </div>
-          `).join('')
-          || empty()
-        }
-
+            <span class="status">${p.activo === false ? 'Inactivo' : 'Activo'}</span>
+          </div>
+        `).join('') || empty()}
       </div>
     `
   );
 }
 
-/* =========================================================
-   CREAR COLEGIO
-========================================================= */
-
 async function addSchool() {
+  if (me.role !== 'superadmin') return alert('Acceso denegado.');
+  const name = prompt('Nombre del colegio:');
+  if (!name || !name.trim()) return;
+  const code = prompt('Código del colegio:');
+  if (!code || !code.trim()) return;
 
-  if (me.role !== 'superadmin') {
-    alert('Solo el SuperAdmin puede crear colegios.');
-    return;
-  }
-
-  const name = prompt(
-    'Nombre del colegio:'
-  );
-
-  if (!name || !name.trim()) {
-    return;
-  }
-
-  const code = prompt(
-    'Código del colegio:'
-  );
-
-  if (!code || !code.trim()) {
-    return;
-  }
-
-  const city = prompt(
-    'Ciudad:',
-    'Lima'
-  );
-
-  const {
-    data,
-    error
-  } = await window.eduBankSupabase
+  const { error } = await window.eduBankSupabase
     .from('schools')
-    .insert({
-      name: name.trim(),
-      code: code.trim(),
-      city: city?.trim() || null,
-      active: true
-    })
-    .select()
-    .single();
+    .insert({ name: name.trim(), code: code.trim(), activo: true });
 
-  if (error) {
-
-    console.error('Error creando colegio:', error);
-
-    alert(
-      'NO SE PUDO CREAR EL COLEGIO\n\n' +
-      error.message
-    );
-
-    return;
-  }
-
-  schoolList.push(data);
-
-  alert(
-    'Colegio creado correctamente.'
-  );
-
+  if (error) return alert('Error: ' + error.message);
+  alert('Colegio creado exitosamente.');
   await loadData();
-
   render('colegios');
 }
 
-/* =========================================================
-   CREAR USUARIO
-========================================================= */
-
-async function addUser() {
-
-  if (me.role !== 'superadmin') {
-
-    alert(
-      'Solo el SuperAdmin puede crear usuarios.'
-    );
-
-    return;
-  }
-
-  if (!schoolList.length) {
-
-    alert(
-      'Primero debes crear al menos un colegio.'
-    );
-
-    return;
-  }
-
-  const name = prompt(
-    'Nombre completo:'
-  );
-
-  if (!name || !name.trim()) {
-    return;
-  }
-
-  const email = prompt(
-    'Correo electrónico de acceso:'
-  );
-
-  if (!email || !email.trim()) {
-    return;
-  }
-
-  const password = prompt(
-    'Contraseña temporal (mínimo 6 caracteres):'
-  );
-
-  if (!password || password.length < 6) {
-
-    alert(
-      'La contraseña debe tener al menos 6 caracteres.'
-    );
-
-    return;
-  }
-
-  const role = prompt(
-    'Rol:\n\n' +
-    'superadmin\n' +
-    'director\n' +
-    'docente\n' +
-    'alumno',
-    'alumno'
-  );
-
-  if (
-    ![
-      'superadmin',
-      'director',
-      'docente',
-      'alumno'
-    ].includes(role?.trim().toLowerCase())
-  ) {
-
-    alert('Rol inválido.');
-
-    return;
-  }
-
-  const selectedRole =
-    role.trim().toLowerCase();
-
-  let schoolId = null;
-
-  if (selectedRole !== 'superadmin') {
-
-    const options =
-      schoolList
-        .map(
-          (s, i) =>
-            `${i + 1}. ${s.name} (${s.code})`
-        )
-        .join('\n');
-
-    const selected = prompt(
-      'Selecciona el colegio escribiendo el número:\n\n' +
-      options,
-      '1'
-    );
-
-    const index =
-      Number(selected) - 1;
-
-    if (
-      !Number.isInteger(index) ||
-      !schoolList[index]
-    ) {
-
-      alert('Colegio inválido.');
-
-      return;
-    }
-
-    schoolId = schoolList[index].id;
-  }
-
-  const dni =
-    prompt('DNI (opcional):')?.trim() || null;
-
-
-  /* LLAMADA A EDGE FUNCTION */
-
-  try {
-
-    const {
-      data,
-      error
-    } = await window.eduBankSupabase
-      .functions
-      .invoke(
-        'admin-create-user',
-        {
-          body: {
-            email: email.trim(),
-            password,
-            full_name: name.trim(),
-            role: selectedRole,
-            school_id: schoolId,
-            dni
-          }
-        }
-      );
-
-    console.log(
-      'Respuesta admin-create-user:',
-      data
-    );
-
-    if (error) {
-
-      console.error(
-        'Error Edge Function:',
-        error
-      );
-
-      alert(
-        'NO SE PUDO CREAR EL USUARIO\n\n' +
-        (error.message || String(error)) +
-        '\n\nVerifica que la Edge Function ' +
-        '"admin-create-user" esté desplegada en Supabase.'
-      );
-
-      return;
-    }
-
-    if (data && data.ok === false) {
-
-      alert(
-        'NO SE PUDO CREAR EL USUARIO\n\n' +
-        (data.error || 'Error desconocido')
-      );
-
-      return;
-    }
-
-    alert(
-      'Usuario creado correctamente.\n\n' +
-      'Ahora podrá ingresar con su correo y contraseña.'
-    );
-
-    await loadData();
-
-    render('usuarios');
-
-  } catch (err) {
-
-    console.error(err);
-
-    alert(
-      'ERROR AL CREAR USUARIO\n\n' +
-      (err.message || String(err))
-    );
-  }
-}
-
-/* =========================================================
-   RECOMPENSAS
-========================================================= */
-
 function rewards() {
-
   return layout(
     'Entregar EduCoins',
     `
       <div class="panel">
-
         <h2>Registrar recompensa</h2>
-
-        <p class="muted">
-          La operación actualiza el saldo
-          y registra el movimiento en Supabase.
-        </p>
-
         <select id="rewardStudent">
-
-          ${students.map(s => `
-            <option value="${s.id}">
-              ${s.profile?.full_name || 'Alumno'}
-              ·
-              ${s.profile?.dni || ''}
-            </option>
-          `).join('')}
-
+          ${students.map(s => `<option value="${s.id}">${s.nombres || ''} ${s.apellidos || ''} (${s.dni || ''})</option>`).join('')}
         </select>
-
-        <input
-          id="rewardAmount"
-          type="number"
-          min="1"
-          placeholder="EduCoins">
-
-        <input
-          id="rewardTitle"
-          placeholder="Motivo de la recompensa">
-
-        <button
-          class="primary"
-          onclick="grantReward()">
-
-          Entregar EduCoins
-
-        </button>
-
+        <input id="rewardAmount" type="number" min="1" placeholder="EduCoins">
+        <input id="rewardTitle" placeholder="Concepto o motivo">
+        <button class="primary" onclick="grantReward()">Entregar EduCoins</button>
       </div>
     `
   );
 }
 
 async function grantReward() {
+  const student_id = $('#rewardStudent').value;
+  const amount = Number($('#rewardAmount').value);
+  const concepto = $('#rewardTitle').value.trim();
 
-  const student_id =
-    $('#rewardStudent').value;
-
-  const amount =
-    Number($('#rewardAmount').value);
-
-  const title =
-    $('#rewardTitle').value.trim();
-
-  if (
-    !amount ||
-    amount < 1 ||
-    !title
-  ) {
-
-    alert(
-      'Completa alumno, monto y motivo.'
-    );
-
-    return;
+  if (!amount || amount < 1 || !concepto) {
+    return alert('Completa todos los campos.');
   }
 
-  const { error } =
-    await window.eduBankSupabase
-      .rpc(
-        'grant_educoins',
-        {
-          p_student: student_id,
-          p_amount: amount,
-          p_title: title,
-          p_meta: 'EduBank · recompensa'
-        }
-      );
+  const { error } = await window.eduBankSupabase
+    .from('coin_transactions')
+    .insert({
+      student_id,
+      school_id: me.school_id,
+      amount,
+      tipo: 'ingreso',
+      concepto,
+      created_by: me.id
+    });
 
-  if (error) {
-
-    alert(
-      'No se pudo entregar EduCoins:\n\n' +
-      error.message
-    );
-
-    return;
-  }
-
+  if (error) return alert('Error al registrar: ' + error.message);
   await loadData();
-
   render('recompensas');
-
-  alert(
-    'EduCoins entregados y registrados en Supabase.'
-  );
+  alert('EduCoins entregados con éxito.');
 }
 
-/* =========================================================
-   AULAS
-========================================================= */
-
 function aulas() {
-
   return layout(
     'Aulas',
     `
       <div class="panel">
-
-        <div class="paneltitle">
-
-          <h2>Aulas reales</h2>
-
-          ${
-            me.role === 'director'
-              ? `
-                <button
-                  class="primary smallbtn"
-                  onclick="addClass()">
-                  + Aula
-                </button>
-              `
-              : ''
-          }
-
-        </div>
-
-        ${
-          classes.map(c => `
-            <div class="listrow">
-
-              <div>
-
-                <b>${c.name}</b>
-
-                <small>
-                  ${c.level || ''}
-                  · Tutor:
-                  ${c.teacher?.full_name || 'Sin asignar'}
-                </small>
-
-              </div>
-
-              <strong>
-                ${
-                  students.filter(
-                    s => s.class_id === c.id
-                  ).length
-                }
-                alumnos
-              </strong>
-
+        <div class="paneltitle"><h2>Aulas reales</h2></div>
+        ${classes.map(c => `
+          <div class="listrow">
+            <div>
+              <b>${c.nombre} ${c.seccion || ''}</b>
+              <small>Tutor: ${c.docente ? `${c.docente.nombres} ${c.docente.apellidos}` : 'Sin asignar'}</small>
             </div>
-          `).join('')
-          || empty()
-        }
-
+            <strong>${students.filter(s => s.class_id === c.id).length} alumnos</strong>
+          </div>
+        `).join('') || empty()}
       </div>
     `
   );
 }
 
-/* =========================================================
-   DOCENTES
-========================================================= */
-
 function docentes() {
-
   return layout(
     'Docentes',
     `
       <div class="panel">
-
-        ${
-          teachers.map(t => `
-            <div class="listrow">
-
-              <div>
-
-                <b>${t.full_name}</b>
-
-                <small>
-                  ${t.dni || 'Sin DNI'}
-                  ·
-                  ${schoolName(t.school_id)}
-                </small>
-
-              </div>
-
-              <span class="status">
-                Activo
-              </span>
-
+        ${teachers.map(t => `
+          <div class="listrow">
+            <div>
+              <b>${t.nombres || ''} ${t.apellidos || ''}</b>
+              <small>${t.dni || 'Sin DNI'} · ${schoolName(t.school_id)}</small>
             </div>
-          `).join('')
-          || empty()
-        }
-
+            <span class="status">Activo</span>
+          </div>
+        `).join('') || empty()}
       </div>
     `
   );
 }
-
-/* =========================================================
-   MOVIMIENTOS
-========================================================= */
 
 function movements() {
-
   return layout(
     'Movimientos',
-    `
-      <div class="panel">
-
-        ${
-          transactions
-            .map(t =>
-              move({
-                ...t,
-                title:
-                  studentName(t.student_id)
-                  + ' · '
-                  + t.title
-              })
-            )
-            .join('')
-          || empty()
-        }
-
-      </div>
-    `
+    `<div class="panel">${transactions.map(t => move({ ...t, concepto: `${studentName(t.student_id)} · ${t.concepto}` })).join('') || empty()}</div>`
   );
 }
 
-/* =========================================================
-   REPORTES
-========================================================= */
-
 function reportes() {
-
-  const total =
-    students.reduce(
-      (a, s) =>
-        a + Number(s.balance || 0),
-      0
-    );
-
-  const ins =
-    transactions
-      .filter(t => t.type === 'in')
-      .reduce(
-        (a, t) =>
-          a + Number(t.amount || 0),
-        0
-      );
-
-  const outs =
-    Math.abs(
-      transactions
-        .filter(t => t.type === 'out')
-        .reduce(
-          (a, t) =>
-            a + Number(t.amount || 0),
-          0
-        )
-    );
+  const total = students.reduce((a, s) => a + Number(s.balance || 0), 0);
+  const ingresos = transactions.filter(t => t.tipo === 'ingreso').reduce((a, t) => a + Number(t.amount || 0), 0);
+  const egresos = transactions.filter(t => t.tipo === 'egreso').reduce((a, t) => a + Number(t.amount || 0), 0);
 
   return layout(
     'Reportes',
     `
       <div class="cards">
-
-        <div class="stat">
-          <span>🪙 SALDO</span>
-          <b>${money(total)}</b>
-          <small>EduCoins</small>
-        </div>
-
-        <div class="stat">
-          <span>↗ INGRESOS</span>
-          <b>${money(ins)}</b>
-          <small>movimientos</small>
-        </div>
-
-        <div class="stat">
-          <span>↘ EGRESOS</span>
-          <b>${money(outs)}</b>
-          <small>movimientos</small>
-        </div>
-
+        <div class="stat"><span>🪙 SALDO GLOBAL</span><b>${money(total)}</b><small>EduCoins</small></div>
+        <div class="stat"><span>↗ INGRESOS</span><b>${money(ingresos)}</b><small>total</small></div>
+        <div class="stat"><span>↘ EGRESOS</span><b>${money(egresos)}</b><small>total</small></div>
       </div>
     `
   );
 }
 
-/* =========================================================
-   CUENTA / TIENDA
-========================================================= */
-
-function account() {
-  return studentHome();
-}
-
 function store() {
-
   return layout(
     'Tienda',
     `
       <div class="panel">
-
         <h2>Tienda escolar</h2>
-
-        <p class="muted">
-          Los canjes se registrarán
-          contra tu cuenta real.
-        </p>
-
         <div class="grid">
-
           <article>
-
             <em>📓</em>
-
             <h3>Cuaderno premium</h3>
-
             <p>200 EduCoins</p>
-
-            <button
-              class="primary"
-              onclick="buy('Cuaderno premium',200)">
-
-              Canjear
-
-            </button>
-
+            <button class="primary" onclick="alert('Canje en desarrollo')">Canjear</button>
           </article>
-
-          <article>
-
-            <em>🎒</em>
-
-            <h3>Kit escolar</h3>
-
-            <p>500 EduCoins</p>
-
-            <button
-              class="primary"
-              onclick="buy('Kit escolar',500)">
-
-              Canjear
-
-            </button>
-
-          </article>
-
         </div>
-
       </div>
     `
-  );
-}
-
-async function buy(name, cost) {
-
-  if (!students[0]) return;
-
-  const { error } =
-    await window.eduBankSupabase
-      .rpc(
-        'spend_educoins',
-        {
-          p_student: students[0].id,
-          p_amount: cost,
-          p_title: name,
-          p_meta: 'Tienda escolar'
-        }
-      );
-
-  if (error) {
-
-    alert(error.message);
-
-    return;
-  }
-
-  await loadData();
-
-  render('tienda');
-
-  alert(
-    'Canje realizado en la cuenta real.'
   );
 }
 
 function loans() {
-
   return layout(
     'Préstamos',
-    `
-      <div class="panel">
-
-        <h2>Simulador</h2>
-
-        <p class="muted">
-          Módulo preparado para conexión
-          con préstamos reales.
-        </p>
-
-        <input
-          id="loanAmount"
-          type="number"
-          min="100"
-          value="500">
-
-        <button
-          class="primary"
-          onclick="
-            alert(
-              'Módulo preparado para la siguiente iteración.'
-            )
-          ">
-
-          Simular
-
-        </button>
-
-      </div>
-    `
-  );
-}
-
-function movimientosStudent() {
-  return movements();
-}
-
-/* =========================================================
-   ALTA TEMPORAL DE ALUMNO / AULA
-========================================================= */
-
-async function addStudent() {
-
-  alert(
-    'La creación administrativa de alumnos ' +
-    'se realizará mediante el módulo Usuarios. ' +
-    'Crea primero el usuario con rol ALUMNO.'
-  );
-}
-
-async function addClass() {
-
-  alert(
-    'El módulo de creación de aulas ' +
-    'se implementará después de validar ' +
-    'la estructura de clases.'
+    `<div class="panel"><h2>Simulador de créditos</h2><p class="muted">Módulo disponible para solicitudes de crédito escolar.</p></div>`
   );
 }
 
 /* =========================================================
-   RENDER
+   ENRUTADOR DE VISTAS (RENDER)
 ========================================================= */
 
 async function render(v) {
-
   let out;
-
   if (me.role === 'alumno') {
-
-    out =
-      v === 'inicio'
-        ? studentHome()
-        : v === 'cuenta'
-        ? account()
-        : v === 'movimientos'
-        ? movimientosStudent()
-        : v === 'tienda'
-        ? store()
-        : loans();
-
+    out = v === 'inicio' ? studentHome() :
+          v === 'cuenta' ? studentHome() :
+          v === 'movimientos' ? movements() :
+          v === 'tienda' ? store() : loans();
   } else {
-
-    if (v === 'inicio') {
-      out = adminHome();
-
-    } else if (v === 'alumnos') {
-      out = renderAlumnos();
-
-    } else if (v === 'recompensas') {
-      out = rewards();
-
-    } else if (v === 'aulas') {
-      out = aulas();
-
-    } else if (v === 'docentes') {
-      out = docentes();
-
-    } else if (v === 'colegios') {
-      out = colegios();
-
-    } else if (v === 'usuarios') {
-      out = await usuarios();
-
-    } else if (v === 'reportes') {
-      out = reportes();
-
-    } else {
-      out = movements();
-    }
+    out = v === 'inicio' ? adminHome() :
+          v === 'alumnos' ? renderAlumnos() :
+          v === 'recompensas' ? rewards() :
+          v === 'aulas' ? aulas() :
+          v === 'docentes' ? docentes() :
+          v === 'colegios' ? colegios() :
+          v === 'usuarios' ? await usuarios() :
+          v === 'reportes' ? reportes() : movements();
   }
-
   $('#content').innerHTML = out;
 }
 
-/* =========================================================
-   CERRAR SESIÓN
-========================================================= */
-
 async function logout() {
-
   await window.eduBankSupabase.auth.signOut();
-
   location.href = 'login.html';
 }
 
-/* =========================================================
-   ERROR GENERAL
-========================================================= */
-
 function fatal(msg) {
-
   console.error(msg);
-
-  $('#content').innerHTML = `
-    <div class="panel">
-
-      <h2>No se pudo cargar EduBank</h2>
-
-      <p class="errorbox">
-        ${msg}
-      </p>
-
-      <p class="muted">
-        Revisa Supabase, las tablas,
-        las políticas RLS y la conexión.
-      </p>
-
-    </div>
-  `;
+  $('#content').innerHTML = `<div class="panel"><h2>Error en EduBank</h2><p class="errorbox">${msg}</p></div>`;
 }
-
-/* =========================================================
-   ARRANQUE
-========================================================= */
 
 init();
