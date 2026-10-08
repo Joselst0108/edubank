@@ -1,72 +1,30 @@
-exports.handler = async (event) => {
-  const cors = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS'
-  };
-  const reply = (code, obj) => ({
-    statusCode: code,
-    headers: { ...cors, 'Content-Type': 'application/json' },
-    body: JSON.stringify(obj)
-  });
-
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== 'POST') return reply(405, { error: 'Método no permitido' });
-
-  const URL = process.env.SUPABASE_URL;
-  const SERVICE = process.env.SUPABASE_SERVICE_KEY;
-  const ANON = process.env.SUPABASE_ANON_KEY;
-  if (!URL || !SERVICE || !ANON) return reply(500, { error: 'Faltan variables de entorno en Netlify' });
-
-  const token = (event.headers.authorization || event.headers.Authorization || '').replace(/^Bearer\s+/i, '');
-  if (!token) return reply(401, { error: 'Sin autorización' });
-
-  const meRes = await fetch(`${URL}/auth/v1/user`, {
-    headers: { apikey: ANON, Authorization: `Bearer ${token}` }
-  });
-  if (!meRes.ok) return reply(401, { error: 'Sesión inválida' });
-  const me = await meRes.json();
-
-  const pRes = await fetch(`${URL}/rest/v1/perfiles?id=eq.${me.id}&select=rol,colegio_id`, {
-    headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` }
-  });
-  const perfil = (await pRes.json())[0];
-  if (!perfil || !['superadmin', 'admin'].includes(perfil.rol)) return reply(403, { error: 'Sin permiso' });
-
-  let b;
-  try { b = JSON.parse(event.body || '{}'); } catch { return reply(400, { error: 'JSON inválido' }); }
-  const { email, password, colegio_id, rol, nombres, apellidos } = b;
-
-  if (!email || !password || !nombres || !colegio_id || !rol) return reply(400, { error: 'Faltan datos' });
-  if (password.length < 6) return reply(400, { error: 'La contraseña debe tener al menos 6 caracteres' });
-  if (rol === 'superadmin') return reply(403, { error: 'No permitido' });
-
-  if (perfil.rol === 'admin') {
-    if (colegio_id !== perfil.colegio_id) return reply(403, { error: 'Solo puedes crear usuarios de tu colegio' });
-    if (!['docente', 'estudiante'].includes(rol)) return reply(403, { error: 'Solo puedes crear docentes o estudiantes' });
-  }
-
-  const createRes = await fetch(`${URL}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, email_confirm: true })
-  });
-  const created = await createRes.json();
-  if (!createRes.ok) return reply(400, { error: created.msg || created.message || 'Error al crear usuario' });
-
-  const insRes = await fetch(`${URL}/rest/v1/perfiles`, {
-    method: 'POST',
-    headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ id: created.id, colegio_id, rol, nombres, apellidos: apellidos || '' })
-  });
-  if (!insRes.ok) {
-    const err = await insRes.text();
-    await fetch(`${URL}/auth/v1/admin/users/${created.id}`, {
-      method: 'DELETE',
-      headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` }
-    });
-    return reply(400, { error: 'Error al crear perfil: ' + err });
-  }
-
-  return reply(200, { ok: true, id: created.id, email: created.email });
+// Crea un usuario de Supabase Auth + su perfil. Corre en el servidor de Netlify.
+// Variables en Netlify: SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (nunca en el código).
+const U=process.env.SUPABASE_URL,K=process.env.SUPABASE_SERVICE_ROLE_KEY;
+const H={apikey:K,Authorization:'Bearer '+K,'Content-Type':'application/json'};
+const out=(c,o)=>({statusCode:c,headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});
+exports.handler=async ev=>{
+ if(ev.httpMethod!=='POST')return out(405,{error:'Método no permitido'});
+ if(!U||!K)return out(500,{error:'Falta configurar SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en Netlify'});
+ try{
+  const tk=(ev.headers.authorization||'').replace(/^Bearer /i,'');
+  const ur=await fetch(U+'/auth/v1/user',{headers:{apikey:K,Authorization:'Bearer '+tk}});
+  if(!ur.ok)return out(401,{error:'Sesión inválida'});
+  const me=await ur.json();
+  const pr=await (await fetch(`${U}/rest/v1/perfiles?id=eq.${me.id}&select=rol,colegio_id`,{headers:H})).json();
+  const c=pr&&pr[0];
+  if(!c||!['superadmin','admin'].includes(c.rol))return out(403,{error:'Sin permiso'});
+  const b=JSON.parse(ev.body||'{}'),sup=c.rol==='superadmin',rol=b.rol,colegio=sup?b.colegio_id:c.colegio_id;
+  if(!['admin','docente','estudiante'].includes(rol)||(!sup&&rol==='admin'))return out(403,{error:'Rol no permitido'});
+  if(!colegio)return out(400,{error:'Falta el colegio'});
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.email||''))return out(400,{error:'Correo inválido'});
+  if(!b.password||b.password.length<6)return out(400,{error:'La contraseña debe tener al menos 6 caracteres'});
+  if(!(b.nombres||'').trim())return out(400,{error:'Falta el nombre'});
+  const cr=await fetch(U+'/auth/v1/admin/users',{method:'POST',headers:H,body:JSON.stringify({email:b.email.trim().toLowerCase(),password:b.password,email_confirm:true})});
+  const u=await cr.json();
+  if(!cr.ok)return out(400,{error:u.msg||u.message||u.error_description||'No se pudo crear el usuario'});
+  const pf=await fetch(U+'/rest/v1/perfiles',{method:'POST',headers:{...H,Prefer:'return=minimal'},body:JSON.stringify({id:u.id,colegio_id:colegio,rol,nombres:b.nombres.trim(),apellidos:(b.apellidos||'').trim()})});
+  if(!pf.ok){await fetch(U+'/auth/v1/admin/users/'+u.id,{method:'DELETE',headers:H});return out(500,{error:'No se pudo crear el perfil'});}
+  return out(200,{ok:true,id:u.id});
+ }catch(x){return out(500,{error:'Error del servidor'})}
 };
