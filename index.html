@@ -36,7 +36,26 @@ const TH=n=>['Fecha',...(n?['Estudiante']:[]),'Tipo','Monto','Saldo ant.','Saldo
 const movs=n=>q(sb.from('movimientos').select('*,est:perfiles!estudiante_id(nombres,apellidos)').order('creado',{ascending:false}).limit(100));
 const V={
 async col(){const c=await q(sb.from('colegios').select('*,tesoreria(saldo)').order('creado'));return`<h2>🏫 Colegios</h2><button class="btn red" onclick="newCol()">+ Crear colegio</button><div class="card" style="margin-top:12px">${tb(['Colegio','Plan','Tesorería','ID','Acción'],c.map(x=>[e(x.nombre),e(x.plan),f([].concat(x.tesoreria)[0]?.saldo),`<span class="mu">${x.id}</span>`,`<button class="btn sm" onclick="fondos('${x.id}')">Ajustar fondos</button>`]))}</div>`},
-async usr(){const c=await q(sb.from('colegios').select('id,nombre'));return`<h2>👤 Vincular usuario a un colegio</h2><div class="card"><p class="mu">Primero crea el usuario en Supabase → Authentication → Users (marca "Auto Confirm User"), copia su UUID y pégalo aquí.</p><label>UUID del usuario</label><input id="u1"><label>Colegio</label><select id="u2">${c.map(x=>`<option value="${x.id}">${e(x.nombre)}</option>`)}</select><label>Rol</label><select id="u3"><option>admin</option><option>docente</option><option>estudiante</option></select><label>Nombres</label><input id="u4"><label>Apellidos</label><input id="u5"><div class="btns"><button class="btn" onclick="newUsr()">Vincular</button></div></div>`},
+async usr(){
+  const c=await q(sb.from('colegios').select('id,nombre'));
+  const esSuper=P.rol==='superadmin';
+  return`<h2>👤 Crear usuario</h2>
+  <div class="card">
+    <p class="mu">La cuenta se crea al instante. Comparte el correo y la contraseña con el usuario.</p>
+    <label>Correo</label><input id="u0" type="email" placeholder="profesor@colegio.pe">
+    <label>Contraseña temporal</label><input id="u1" type="text" value="123456">
+    <label>Colegio</label>
+    <select id="u2">${c.map(x=>`<option value="${x.id}">${e(x.nombre)}</option>`).join('')}</select>
+    <label>Rol</label>
+    <select id="u3">
+      <option value="estudiante">Estudiante</option>
+      <option value="docente">Docente</option>
+      ${esSuper?'<option value="admin">Admin del colegio</option>':''}
+    </select>
+    <label>Nombres</label><input id="u4" placeholder="Ana">
+    <label>Apellidos</label><input id="u5" placeholder="Torres">
+    <div class="btns"><button class="btn" onclick="newUsr()">Crear usuario</button></div>
+  </div>`},
 async tre(){const [t,s]=await Promise.all([tres(),students()]),d=s.reduce((a,x)=>a+x.saldo,0),c=Math.round(d/((t+d)||1)*100);return`<h2>🏦 Tesorería EduBank</h2><div class="grid">${kpi('En Tesorería',f(t))}${kpi('Estudiantes',s.length)}${kpi('EduSoles distribuidos',f(d))}${kpi('Circulación',c+'%',c>70?'⚠️ Alta':'Saludable')}</div><div class="card"><div class="btns"><button class="btn red big" onclick="give()">+ ENTREGAR EDUSOLES</button></div><p class="mu">Los EduSoles solo salen de la Tesorería. Todo queda registrado.</p></div>`},
 async est(){const s=await students();return`<h2>🎓 Estudiantes</h2><div class="card">${tb(['Nombre','Saldo','Ahorro','Puntos','Acciones'],s.map(x=>[nm(x),f(x.saldo),f(x.ahorro),x.puntos,`<button class="btn sm" onclick="give('${x.id}')">Entregar</button> <button class="btn sm red" onclick="wd('${x.id}')">Retirar</button>`]))}</div>`},
 async mov(){const m=await movs();return`<h2>📒 Movimientos</h2><div class="card">${tb(TH(staff()),txRows(m,staff()))}</div>`},
@@ -53,7 +72,20 @@ async function login(){const {error}=await sb.auth.signInWithPassword({email:val
 async function out(){await sb.auth.signOut();P=null;view='';render()}
 const newCol=()=>{const n=prompt('Nombre del colegio');if(!n)return;const fo=parseFloat(prompt('Fondo inicial de la Tesorería (E$)','10000'));run(()=>rpc('crear_colegio',{p_nombre:n,p_plan:'pro',p_fondo:fo||0}),'Colegio creado')};
 const fondos=id=>{const m=parseFloat(prompt('Monto a sumar (negativo para restar)'));if(!m)return;const mo=prompt('Motivo');run(()=>rpc('ajustar_fondos',{p_colegio:id,p_monto:m,p_motivo:mo}),'Fondos ajustados')};
-const newUsr=()=>run(()=>rpc('crear_perfil',{p_id:val('u1'),p_colegio:val('u2'),p_rol:val('u3'),p_nombres:val('u4'),p_apellidos:val('u5')}),'Usuario vinculado');
+const newUsr=()=>run(async()=>{
+  const email=val('u0'),pass=val('u1'),colegio=val('u2'),rol=val('u3'),nombres=val('u4'),apellidos=val('u5');
+  if(!email||!pass||!nombres)throw{message:'Completa correo, contraseña y nombres'};
+  if(pass.length<6)throw{message:'La contraseña debe tener al menos 6 caracteres'};
+  const {data:{session}}=await sb.auth.getSession();
+  const res=await fetch('/.netlify/functions/crear-usuario',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+    body:JSON.stringify({email,password:pass,colegio_id:colegio,rol,nombres,apellidos})
+  });
+  const json=await res.json();
+  if(!res.ok)throw{message:json.error||'Error al crear usuario'};
+  cm();
+},'Usuario creado ✅');
 async function give(id){const s=await students();modal(`<h3>Entregar EduSoles</h3><button class="btn ghost sm" onclick="document.querySelectorAll('#gs input').forEach(x=>x.checked=true)">Seleccionar toda el aula</button><div id="gs">${s.map(x=>`<label class="ck"><input type="checkbox" value="${x.id}" ${x.id==id?'checked':''}> ${nm(x)}</label>`).join('')}</div><label>Cantidad por estudiante (E$)</label><input id="gq" type="number" min="1" step="0.5"><label>Tipo</label><select id="gt">${['Premio','Bono','Participación','Asistencia','Tarea','Logro','Conducta','Incentivo','Otro'].map(x=>`<option>${x}</option>`)}</select><label>Motivo</label><input id="gr"><div class="btns"><button class="btn red" onclick="gdo()">Entregar</button></div>`)}
 function gdo(){run(async()=>{const ids=[...document.querySelectorAll('#gs input:checked')].map(x=>x.value),a=parseFloat($('gq').value);if(!ids.length)throw{message:'Selecciona estudiantes'};if(!(a>0))throw{message:'Cantidad inválida'};if(!val('gr'))throw{message:'Escribe el motivo'};const t=await tres();if(a*ids.length>t)throw{message:'Total supera la Tesorería ('+f(t)+')'};if(!confirm('¿Entregar '+f(a)+' a '+ids.length+' estudiante(s)?'))throw{message:'Cancelado'};for(const i of ids)await rpc('entregar_edusoles',{p_est:i,p_tipo:$('gt').value,p_monto:a,p_motivo:val('gr'),p_clave:crypto.randomUUID()});cm()},'EduSoles entregados')}
 const wd=id=>{const a=parseFloat(prompt('Cantidad a retirar (E$)'));if(!a)return;const t=confirm('Aceptar = Reposición (máx. 25% del saldo). Cancelar = Retiro.')?'Reposición':'Retiro',m=prompt('Motivo (obligatorio)');run(()=>rpc('entregar_edusoles',{p_est:id,p_tipo:t,p_monto:a,p_motivo:m,p_clave:crypto.randomUUID()}),'Retiro registrado')};
